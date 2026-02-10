@@ -26,7 +26,7 @@ final class HydratorStrategy implements StrategyInterface
     /**
      * @inheritDoc
      */
-    public function extract($value, ?object $object = null): array
+    public function extract(mixed $value, ?object $object = null): mixed
     {
         $result = [];
         foreach ($value as $instance) {
@@ -38,7 +38,7 @@ final class HydratorStrategy implements StrategyInterface
     /**
      * @inheritDoc
      */
-    public function hydrate($value, ?array $data = null)
+    public function hydrate(mixed $value, ?array $data = null): mixed
     {
         $result = $value;
         if (is_array($value)) {

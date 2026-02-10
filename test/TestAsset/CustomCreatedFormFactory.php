@@ -13,7 +13,7 @@ final class CustomCreatedFormFactory implements FactoryInterface
     /**
      * @inheritDoc
      */
-    public function __invoke(ContainerInterface $container, $name, ?array $options = null)
+    public function __invoke(ContainerInterface $container, string $name, ?array $options = null): mixed
     {
         $options        = $options ?: [];
         $creationString = 'now';

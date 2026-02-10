@@ -62,7 +62,11 @@ class Factory
     public function getInputFilterFactory(): InputFilterFactory
     {
         if (null === $this->inputFilterFactory) {
-            $this->setInputFilterFactory(new InputFilterFactory());
+            if (method_exists(InputFilterFactory::class, 'new')) {
+                $this->setInputFilterFactory(InputFilterFactory::new());
+            } else {
+                $this->setInputFilterFactory(new InputFilterFactory());
+            }
             assert(null !== $this->inputFilterFactory);
         }
         return $this->inputFilterFactory;

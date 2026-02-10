@@ -13,9 +13,7 @@ use Laminas\ServiceManager\Exception\InvalidServiceException;
 use Laminas\Stdlib\InitializableInterface;
 use Psr\Container\ContainerInterface;
 
-use function array_push;
-use function array_search;
-use function array_unshift;
+use function array_merge;
 use function class_exists;
 use function get_debug_type;
 use function method_exists;
@@ -36,7 +34,7 @@ class FormElementManager extends AbstractPluginManager
      *
      * @var array
      */
-    protected $aliases = [
+    protected array $aliases = [
         'button'         => Element\Button::class,
         'Button'         => Element\Button::class,
         'captcha'        => Element\Captcha::class,
@@ -120,7 +118,7 @@ class FormElementManager extends AbstractPluginManager
      *
      * @var array
      */
-    protected $factories = [
+    protected array $factories = [
         Element\Button::class         => ElementFactory::class,
         Element\Captcha::class        => ElementFactory::class,
         Element\Checkbox::class       => ElementFactory::class,
@@ -198,7 +196,7 @@ class FormElementManager extends AbstractPluginManager
      *
      * @var bool
      */
-    protected $sharedByDefault = false;
+    protected bool $sharedByDefault = false;
 
     /**
      * Interface all plugins managed by this class must implement.
@@ -206,6 +204,16 @@ class FormElementManager extends AbstractPluginManager
      * @var class-string
      */
     protected $instanceOf = ElementInterface::class;
+
+    private ContainerInterface $creationContext;
+
+    private bool $defaultInitializersInjected = false;
+
+    public function __construct(ContainerInterface $creationContext, array $config = [])
+    {
+        $this->creationContext = $creationContext;
+        parent::__construct($creationContext, $config);
+    }
 
     /**
      * Inject the factory to any element that implements FormFactoryAwareInterface
@@ -254,7 +262,7 @@ class FormElementManager extends AbstractPluginManager
      * @param string $name
      * @param null|string $class
      */
-    public function setInvokableClass($name, $class = null): void
+    public function setInvokableClass(string $name, ?string $class = null): void
     {
         $class = $class ?: $name;
 
@@ -298,22 +306,19 @@ class FormElementManager extends AbstractPluginManager
      *
      * @inheritDoc
      */
-    public function configure(array $config)
+    public function configure(array $config): static
     {
-        $firstInitializer = [$this, 'injectFactory'];
-        $lastInitializer  = [$this, 'callElementInit'];
-
-        foreach ([$firstInitializer, $lastInitializer] as $default) {
-            if (false === ($index = array_search($default, $this->initializers))) {
-                continue;
-            }
-            unset($this->initializers[$index]);
+        if (! $this->defaultInitializersInjected) {
+            $this->defaultInitializersInjected = true;
+            $configInitializers        = $config['initializers'] ?? [];
+            $config['initializers']    = array_merge(
+                [[$this, 'injectFactory']],
+                $configInitializers,
+                [[$this, 'callElementInit']],
+            );
         }
 
         parent::configure($config);
-
-        array_unshift($this->initializers, $firstInitializer);
-        array_push($this->initializers, $lastInitializer);
 
         return $this;
     }
@@ -345,7 +350,11 @@ class FormElementManager extends AbstractPluginManager
 
             $this->setInvokableClass($name, $name);
         }
-        return parent::get($name, $options);
+        if ($options !== null) {
+            return $this->build($name, $options);
+        }
+
+        return parent::get($name);
     }
 
     /**
