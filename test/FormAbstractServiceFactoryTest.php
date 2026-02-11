@@ -18,6 +18,8 @@ use Laminas\ServiceManager\ServiceManager;
 use Laminas\Validator\ValidatorPluginManager;
 use PHPUnit\Framework\TestCase;
 
+use function method_exists;
+
 final class FormAbstractServiceFactoryTest extends TestCase
 {
     private ServiceManager $services;
@@ -37,6 +39,11 @@ final class FormAbstractServiceFactoryTest extends TestCase
         $services->setService(HydratorPluginManager::class, $hydrators);
         $services->setService(InputFilterPluginManager::class, $inputFilters);
         $services->setService(ValidatorPluginManager::class, $validators);
+        if (method_exists(Factory::class, 'new')) {
+            $services->setAllowOverride(true);
+            $services->setService(Factory::class, Factory::new($services));
+            $services->setAllowOverride(false);
+        }
 
         $forms = $this->forms = new FormAbstractServiceFactory();
         $services->addAbstractFactory($forms);
@@ -143,12 +150,16 @@ final class FormAbstractServiceFactoryTest extends TestCase
         $inputFilter = $form->getInputFilter();
         self::assertInstanceOf(InputFilter::class, $inputFilter);
 
-        $inputFactory = $inputFilter->getFactory();
-        self::assertInstanceOf(Factory::class, $inputFactory);
-        $filters    = $this->services->get(FilterPluginManager::class);
-        $validators = $this->services->get(ValidatorPluginManager::class);
-        self::assertSame($filters, $inputFactory->getDefaultFilterChain()->getPluginManager());
-        self::assertSame($validators, $inputFactory->getDefaultValidatorChain()->getPluginManager());
+        if (method_exists($inputFilter, 'getFactory')) {
+            $inputFactory = $inputFilter->getFactory();
+            self::assertInstanceOf(Factory::class, $inputFactory);
+            $filters    = $this->services->get(FilterPluginManager::class);
+            $validators = $this->services->get(ValidatorPluginManager::class);
+            self::assertSame($filters, $inputFactory->getDefaultFilterChain()->getPluginManager());
+            self::assertSame($validators, $inputFactory->getDefaultValidatorChain()->getPluginManager());
+        } elseif (method_exists(Factory::class, 'new')) {
+            self::assertInstanceOf(Factory::class, $this->services->get(Factory::class));
+        }
     }
 
     public function testFormCanBeCreatedViaInteractionOfAllManagersExceptInputFilterManager(): void
@@ -194,10 +205,14 @@ final class FormAbstractServiceFactoryTest extends TestCase
         $inputFilter = $form->getInputFilter();
         self::assertInstanceOf(InputFilter::class, $inputFilter);
 
-        $inputFactory = $inputFilter->getFactory();
-        $filters      = $this->services->get(FilterPluginManager::class);
-        $validators   = $this->services->get(ValidatorPluginManager::class);
-        self::assertSame($filters, $inputFactory->getDefaultFilterChain()->getPluginManager());
-        self::assertSame($validators, $inputFactory->getDefaultValidatorChain()->getPluginManager());
+        if (method_exists($inputFilter, 'getFactory')) {
+            $inputFactory = $inputFilter->getFactory();
+            $filters      = $this->services->get(FilterPluginManager::class);
+            $validators   = $this->services->get(ValidatorPluginManager::class);
+            self::assertSame($filters, $inputFactory->getDefaultFilterChain()->getPluginManager());
+            self::assertSame($validators, $inputFactory->getDefaultValidatorChain()->getPluginManager());
+        } elseif (method_exists(Factory::class, 'new')) {
+            self::assertInstanceOf(Factory::class, $this->services->get(Factory::class));
+        }
     }
 }

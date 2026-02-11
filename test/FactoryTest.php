@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaminasTest\Form;
 
+use Laminas\Filter\ConfigProvider as FilterConfigProvider;
 use Laminas\Form;
 use Laminas\Form\ElementInterface;
 use Laminas\Form\Exception\DomainException;
@@ -15,10 +16,12 @@ use Laminas\Form\FormInterface;
 use Laminas\Hydrator\ClassMethodsHydrator;
 use Laminas\Hydrator\HydratorPluginManager;
 use Laminas\Hydrator\ObjectPropertyHydrator;
-use Laminas\InputFilter\Factory;
+use Laminas\InputFilter\ConfigProvider as InputFilterConfigProvider;
+use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\Input;
 use Laminas\InputFilter\InputFilterInterface;
 use Laminas\ServiceManager\ServiceManager;
+use Laminas\Validator\ConfigProvider as ValidatorConfigProvider;
 use Laminas\Validator\Digits;
 use Laminas\Validator\ValidatorChain;
 use Laminas\Validator\ValidatorInterface;
@@ -27,6 +30,9 @@ use LaminasTest\Form\TestAsset\InputFilter;
 use LaminasTest\Form\TestAsset\Model;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+
+use function array_replace_recursive;
+use function method_exists;
 
 final class FactoryTest extends TestCase
 {
@@ -320,8 +326,11 @@ final class FactoryTest extends TestCase
 
     public function testCanCreateFormsWithInputFilterInstances(): void
     {
-        $filter = new InputFilter();
-        $form   = $this->factory->createForm([
+        $filter = method_exists(InputFilterFactory::class, 'new')
+          ? new InputFilter(InputFilterFactory::new())
+          : new InputFilter();
+
+        $form = $this->factory->createForm([
             'name'         => 'foo',
             'input_filter' => $filter,
         ]);
@@ -426,14 +435,29 @@ final class FactoryTest extends TestCase
 
     public function testCanCreateFormFromConcreteClassAndSpecifyCustomValidatorByName(): void
     {
-        $validatorManager = new ValidatorPluginManager($this->services);
-        $validatorManager->setInvokableClass('baz', Digits::class);
+        if (method_exists(InputFilterFactory::class, 'new')) {
+            $factoryContainer = new ServiceManager();
+            $dependencies     = array_replace_recursive(
+                (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+                (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+                (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+            );
+            $factoryContainer->configure($dependencies);
 
-        $defaultValidatorChain = new ValidatorChain();
-        $defaultValidatorChain->setPluginManager($validatorManager);
+            $validatorManager = $factoryContainer->get(ValidatorPluginManager::class);
+            $validatorManager->setService('baz', new Digits());
 
-        $inputFilterFactory = new Factory();
-        $inputFilterFactory->setDefaultValidatorChain($defaultValidatorChain);
+            $inputFilterFactory = InputFilterFactory::new($factoryContainer);
+        } else {
+            $validatorManager = new ValidatorPluginManager($this->services);
+            $validatorManager->setInvokableClass('baz', Digits::class);
+
+            $defaultValidatorChain = new ValidatorChain();
+            $defaultValidatorChain->setPluginManager($validatorManager);
+
+            $inputFilterFactory = new InputFilterFactory();
+            $inputFilterFactory->setDefaultValidatorChain($defaultValidatorChain);
+        }
 
         $factory = new FormFactory();
         $factory->setInputFilterFactory($inputFilterFactory);
@@ -482,14 +506,29 @@ final class FactoryTest extends TestCase
     // @codingStandardsIgnoreLine
     public function testCanCreateFormFromConcreteClassWithCustomValidatorByNameAndInputFilterFactoryInConstructor(): void
     {
-        $validatorManager = new ValidatorPluginManager($this->services);
-        $validatorManager->setInvokableClass('baz', Digits::class);
+        if (method_exists(InputFilterFactory::class, 'new')) {
+            $factoryContainer = new ServiceManager();
+            $dependencies     = array_replace_recursive(
+                (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+                (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+                (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+            );
+            $factoryContainer->configure($dependencies);
 
-        $defaultValidatorChain = new ValidatorChain();
-        $defaultValidatorChain->setPluginManager($validatorManager);
+            $validatorManager = $factoryContainer->get(ValidatorPluginManager::class);
+            $validatorManager->setService('baz', new Digits());
 
-        $inputFilterFactory = new Factory();
-        $inputFilterFactory->setDefaultValidatorChain($defaultValidatorChain);
+            $inputFilterFactory = InputFilterFactory::new($factoryContainer);
+        } else {
+            $validatorManager = new ValidatorPluginManager($this->services);
+            $validatorManager->setInvokableClass('baz', Digits::class);
+
+            $defaultValidatorChain = new ValidatorChain();
+            $defaultValidatorChain->setPluginManager($validatorManager);
+
+            $inputFilterFactory = new InputFilterFactory();
+            $inputFilterFactory->setDefaultValidatorChain($defaultValidatorChain);
+        }
 
         $factory = new FormFactory(null, $inputFilterFactory);
 

@@ -21,6 +21,8 @@ final class AttributeBuilderTest extends AbstractBuilderTestCase
 
     protected function createBuilder(): Annotation\AbstractBuilder
     {
-        return new Annotation\AttributeBuilder();
+        $builder = new Annotation\AttributeBuilder();
+        $this->configureInputFilterInputFactoryForV3($builder);
+        return $builder;
     }
 }

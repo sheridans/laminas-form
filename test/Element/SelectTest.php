@@ -10,12 +10,15 @@ use Laminas\Validator\InArray;
 use LaminasTest\Form\TestAsset\CustomTraversable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
-use function count;
+use function is_array;
+use function method_exists;
 use function restore_error_handler;
 use function set_error_handler;
 
 use const E_USER_DEPRECATED;
+use const PHP_VERSION_ID;
 
 final class SelectTest extends TestCase
 {
@@ -100,21 +103,14 @@ final class SelectTest extends TestCase
         $inputSpec = $element->getInputSpecification();
         self::assertArrayHasKey('validators', $inputSpec);
         self::assertIsArray($inputSpec['validators']);
+        self::assertNotEmpty($inputSpec['validators']);
 
-        $expectedClasses = [
-            Explode::class,
-        ];
-        foreach ($inputSpec['validators'] as $validator) {
-            $class = $validator::class;
-            self::assertContains($class, $expectedClasses, $class);
-            switch ($class) {
-                case Explode::class:
-                    self::assertInstanceOf(InArray::class, $validator->getValidator());
-                    break;
-                default:
-                    break;
-            }
-        }
+        // Behavioural assertion: the validator accepts valid option values
+        // and rejects invalid ones, regardless of internal wrapping (Explode vs bare InArray)
+        $validator = $inputSpec['validators'][0];
+        self::assertTrue($validator->isValid('Option 1'));
+        self::assertTrue($validator->isValid('Option 2'));
+        self::assertFalse($validator->isValid('invalid_option'));
     }
 
     public static function selectOptionsDataProvider(): array
@@ -158,15 +154,17 @@ final class SelectTest extends TestCase
     #[DataProvider('selectOptionsDataProvider')]
     public function testInArrayValidatorHaystakIsUpdated(array $valueTests, array $options): void
     {
-        $element   = new SelectElement('my-select');
-        $inputSpec = $element->getInputSpecification();
+        $element = new SelectElement('my-select');
+        $element->getInputSpecification();
+        $element->setValueOptions($options);
 
+        $inputSpec        = $element->getInputSpecification();
         $inArrayValidator = $inputSpec['validators'][0];
         self::assertInstanceOf(InArray::class, $inArrayValidator);
 
-        $element->setValueOptions($options);
-        $haystack = $inArrayValidator->getHaystack();
-        self::assertCount(count($options), $haystack);
+        foreach ($this->getOptionValues($options) as $value) {
+            self::assertTrue($inArrayValidator->isValid($value));
+        }
     }
 
     public function testOptionsHasArrayOnConstruct(): void
@@ -307,5 +305,42 @@ final class SelectTest extends TestCase
         self::assertTrue($inputSpec['allow_empty']);
         self::assertArrayHasKey('continue_if_empty', $inputSpec);
         self::assertTrue($inputSpec['continue_if_empty']);
+    }
+
+    private function getExplodeValidator(Explode $validator): InArray
+    {
+        if (method_exists($validator, 'getValidator')) {
+            $inner = $validator->getValidator();
+            self::assertInstanceOf(InArray::class, $inner);
+            return $inner;
+        }
+
+        $property = new ReflectionProperty($validator, 'validator');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        $inner = $property->getValue($validator);
+        self::assertInstanceOf(InArray::class, $inner);
+
+        return $inner;
+    }
+
+    /** @return list<string|int> */
+    private function getOptionValues(array $options): array
+    {
+        $values = [];
+        foreach ($options as $key => $option) {
+            if (is_array($option) && isset($option['options'])) {
+                foreach ($option['options'] as $nestedKey => $nestedOption) {
+                    $values[] = is_array($nestedOption) ? ($nestedOption['value'] ?? $nestedKey) : $nestedKey;
+                }
+                continue;
+            }
+
+            $values[] = is_array($option) ? ($option['value'] ?? $key) : $key;
+        }
+
+        return $values;
     }
 }

@@ -6,11 +6,21 @@ namespace LaminasTest\Form\Element;
 
 use DateTime;
 use DateTimeImmutable;
+use Laminas\Filter\ConfigProvider as FilterConfigProvider;
 use Laminas\Form\Element\DateTimeSelect as DateTimeSelectElement;
 use Laminas\Form\Exception\InvalidArgumentException;
+use Laminas\InputFilter\ConfigProvider as InputFilterConfigProvider;
 use Laminas\InputFilter\Factory as InputFilterFactory;
+use Laminas\ServiceManager\ServiceManager;
+use Laminas\Validator\ConfigProvider as ValidatorConfigProvider;
 use Laminas\Validator\Date;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function array_replace_recursive;
+use function method_exists;
+
+use const PHP_VERSION_ID;
 
 final class DateTimeSelectTest extends TestCase
 {
@@ -30,7 +40,7 @@ final class DateTimeSelectTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case Date::class:
-                    self::assertEquals('Y-m-d H:i:s', $validator->getFormat());
+                    self::assertEquals('Y-m-d H:i:s', $this->getDateValidatorFormat($validator));
                     break;
                 default:
                     break;
@@ -41,7 +51,7 @@ final class DateTimeSelectTest extends TestCase
     public function testInputSpecificationFilterIfSecondNotProvided(): void
     {
         $element     = new DateTimeSelectElement('test');
-        $factory     = new InputFilterFactory();
+        $factory     = $this->createInputFilterFactory();
         $inputFilter = $factory->createInputFilter([
             'test' => $element->getInputSpecification(),
         ]);
@@ -197,5 +207,36 @@ final class DateTimeSelectTest extends TestCase
         ]);
         $value = $element->getValue();
         self::assertEquals($now->format('Y-m-d 00:00:00'), $value);
+    }
+
+    private function getDateValidatorFormat(Date $validator): string
+    {
+        if (method_exists($validator, 'getFormat')) {
+            return $validator->getFormat();
+        }
+
+        $property = new ReflectionProperty($validator, 'format');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        return (string) $property->getValue($validator);
+    }
+
+    private function createInputFilterFactory(): InputFilterFactory
+    {
+        if (! method_exists(InputFilterFactory::class, 'new')) {
+            return new InputFilterFactory();
+        }
+
+        $container    = new ServiceManager();
+        $dependencies = array_replace_recursive(
+            (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+        );
+        $container->configure($dependencies);
+
+        return InputFilterFactory::new($container);
     }
 }

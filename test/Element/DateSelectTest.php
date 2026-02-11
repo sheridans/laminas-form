@@ -12,6 +12,9 @@ use Laminas\Validator\Date;
 use LaminasTest\Form\TestAsset\CustomTraversable;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function method_exists;
 
 final class DateSelectTest extends TestCase
 {
@@ -31,7 +34,15 @@ final class DateSelectTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case Date::class:
-                    self::assertEquals('Y-m-d', $validator->getFormat());
+                    $format = null;
+                    if (method_exists($validator, 'getFormat')) {
+                        $format = $validator->getFormat();
+                    } else {
+                        $property = new ReflectionProperty(Date::class, 'format');
+                        $property->setAccessible(true);
+                        $format = $property->getValue($validator);
+                    }
+                    self::assertEquals('Y-m-d', $format);
                     break;
                 default:
                     break;

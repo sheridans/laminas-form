@@ -7,6 +7,9 @@ namespace LaminasTest\Form\Element;
 use Laminas\Form\Element\Color as ColorElement;
 use Laminas\Validator\Regex;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function method_exists;
 
 final class ColorTest extends TestCase
 {
@@ -26,7 +29,15 @@ final class ColorTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case Regex::class:
-                    self::assertEquals('/^#[0-9a-fA-F]{6}$/', $validator->getPattern());
+                    $pattern = null;
+                    if (method_exists($validator, 'getPattern')) {
+                        $pattern = $validator->getPattern();
+                    } else {
+                        $property = new ReflectionProperty(Regex::class, 'pattern');
+                        $property->setAccessible(true);
+                        $pattern = $property->getValue($validator);
+                    }
+                    self::assertEquals('/^#[0-9a-fA-F]{6}$/', $pattern);
                     break;
                 default:
                     break;

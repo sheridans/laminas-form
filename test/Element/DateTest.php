@@ -6,6 +6,7 @@ namespace LaminasTest\Form\Element;
 
 use DateInterval;
 use DateTime;
+use DateTimeInterface;
 use Laminas\Form\Element\Date as DateElement;
 use Laminas\Form\Exception\InvalidArgumentException;
 use Laminas\Validator\Date;
@@ -15,10 +16,15 @@ use Laminas\Validator\LessThan;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
+use function class_exists;
 use function date;
 use function date_default_timezone_get;
 use function date_default_timezone_set;
+use function method_exists;
+
+use const PHP_VERSION_ID;
 
 #[CoversClass(DateElement::class)]
 final class DateTest extends TestCase
@@ -64,8 +70,8 @@ final class DateTest extends TestCase
             switch ($class) {
                 case DateStep::class:
                     $dateInterval = new DateInterval('P1D');
-                    self::assertEquals($dateInterval, $validator->getStep());
-                    self::assertEquals(date('Y-m-d', 0), $validator->getBaseValue());
+                    self::assertEquals($dateInterval, $this->getDateStepStep($validator));
+                    self::assertEquals(date('Y-m-d', 0), $this->getDateStepBaseValue($validator));
                     break;
                 default:
                     break;
@@ -75,6 +81,8 @@ final class DateTest extends TestCase
 
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new DateElement('foo');
         $element->setAttributes([
             'inclusive' => true,
@@ -107,8 +115,8 @@ final class DateTest extends TestCase
                     break;
                 case DateStep::class:
                     $dateInterval = new DateInterval('P1D');
-                    self::assertEquals($dateInterval, $validator->getStep());
-                    self::assertEquals('2000-01-01', $validator->getBaseValue());
+                    self::assertEquals($dateInterval, $this->getDateStepStep($validator));
+                    self::assertEquals('2000-01-01', $this->getDateStepBaseValue($validator));
                     break;
                 default:
                     break;
@@ -133,6 +141,8 @@ final class DateTest extends TestCase
             'max' => '31-12-2012',
         ]);
         $element->setFormat('d-m-Y');
+
+        $this->skipIfComparisonValidatorsMissing();
 
         $inputSpec = $element->getInputSpecification();
         foreach ($inputSpec['validators'] as $validator) {
@@ -185,5 +195,46 @@ final class DateTest extends TestCase
         ]);
         $this->expectException(InvalidArgumentException::class);
         $element->getInputSpecification();
+    }
+
+    private function getDateStepStep(DateStep $validator): DateInterval
+    {
+        if (method_exists($validator, 'getStep')) {
+            return $validator->getStep();
+        }
+
+        $property = new ReflectionProperty($validator, 'step');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        return $property->getValue($validator);
+    }
+
+    private function getDateStepBaseValue(DateStep $validator): string
+    {
+        if (method_exists($validator, 'getBaseValue')) {
+            return (string) $validator->getBaseValue();
+        }
+
+        $property = new ReflectionProperty($validator, 'baseValue');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+        $baseValue = $property->getValue($validator);
+
+        if ($baseValue instanceof DateTimeInterface) {
+            return $baseValue->format('Y-m-d');
+        }
+
+        /** @psalm-suppress MixedReturnStatement */
+        return (string) $baseValue;
+    }
+
+    private function skipIfComparisonValidatorsMissing(): void
+    {
+        if (! class_exists(GreaterThan::class) || ! class_exists(LessThan::class)) {
+            self::markTestSkipped('laminas-validator comparison classes are not available in this test matrix');
+        }
     }
 }

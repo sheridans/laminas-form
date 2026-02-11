@@ -10,6 +10,11 @@ use Laminas\Form\Element\MonthSelect as MonthSelectElement;
 use Laminas\Validator\Regex;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function method_exists;
+
+use const PHP_VERSION_ID;
 
 final class MonthSelectTest extends TestCase
 {
@@ -29,7 +34,7 @@ final class MonthSelectTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case Regex::class:
-                    self::assertEquals('/^[0-9]{4}\-(0?[1-9]|1[012])$/', $validator->getPattern());
+                    self::assertEquals('/^[0-9]{4}\-(0?[1-9]|1[012])$/', $this->getRegexPattern($validator));
                     break;
                 default:
                     break;
@@ -108,5 +113,19 @@ final class MonthSelectTest extends TestCase
         $element->setValue(null);
         $value = $element->getValue();
         self::assertEquals(null, $value);
+    }
+
+    private function getRegexPattern(Regex $validator): string
+    {
+        if (method_exists($validator, 'getPattern')) {
+            return $validator->getPattern();
+        }
+
+        $property = new ReflectionProperty($validator, 'pattern');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        return (string) $property->getValue($validator);
     }
 }

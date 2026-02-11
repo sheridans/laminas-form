@@ -10,6 +10,8 @@ final class AnnotationBuilderTest extends AbstractBuilderTestCase
 {
     protected function createBuilder(): Annotation\AbstractBuilder
     {
-        return new Annotation\AnnotationBuilder();
+        $builder = new Annotation\AnnotationBuilder();
+        $this->configureInputFilterInputFactoryForV3($builder);
+        return $builder;
     }
 }

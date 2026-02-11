@@ -9,9 +9,14 @@ use Laminas\Filter\StripNewlines;
 use Laminas\Form\Element\Tel;
 use Laminas\Validator\Regex;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 use function array_diff;
 use function array_map;
+use function method_exists;
+use function str_replace;
+
+use const PHP_VERSION_ID;
 
 final class TelTest extends TestCase
 {
@@ -48,12 +53,29 @@ final class TelTest extends TestCase
 
     private function assertInputSpecContainsRegexValidator(array $inputSpec): void
     {
-        $regexValidatorFound = false;
+        $expectedPattern = '/^[^\r\n]*$/';
         foreach ($inputSpec['validators'] as $validator) {
-            if ($validator instanceof Regex && $validator->getPattern() === "/^[^\r\n]*$/") {
-                $regexValidatorFound = true;
+            if ($validator instanceof Regex) {
+                $actual = str_replace(["\r\n", "\r", "\n"], '\r\n', $this->getRegexPattern($validator));
+                self::assertSame($expectedPattern, $actual);
+                return;
             }
         }
-        self::assertTrue($regexValidatorFound);
+
+        self::fail('Regex validator not found in input specification');
+    }
+
+    private function getRegexPattern(Regex $validator): string
+    {
+        if (method_exists($validator, 'getPattern')) {
+            return $validator->getPattern();
+        }
+
+        $property = new ReflectionProperty($validator, 'pattern');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        return (string) $property->getValue($validator);
     }
 }

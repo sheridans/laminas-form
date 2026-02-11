@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace LaminasTest\Form;
 
 use ArrayObject;
+use Laminas\Filter\ConfigProvider as FilterConfigProvider;
+use Laminas\Filter\FilterChain;
+use Laminas\Filter\FilterPluginManager;
 use Laminas\Form\Element;
 use Laminas\Form\Element\CollectionInterface;
 use Laminas\Form\ElementInterface;
@@ -14,25 +17,42 @@ use Laminas\Form\Factory;
 use Laminas\Form\Fieldset;
 use Laminas\Form\FieldsetInterface;
 use Laminas\Form\Form;
+use Laminas\Form\InputFilter\Factory\NormalizedArrayInputFactory;
+use Laminas\Form\InputFilter\NormalizedArrayInput;
 use Laminas\Hydrator\ArraySerializableHydrator;
 use Laminas\Hydrator\ClassMethodsHydrator;
 use Laminas\Hydrator\ObjectPropertyHydrator;
+use Laminas\Hydrator\Strategy\StrategyInterface;
+use Laminas\I18n\Validator\Alnum;
+use Laminas\I18n\Validator\IsFloat;
 use Laminas\InputFilter\BaseInputFilter;
 use Laminas\InputFilter\CollectionInputFilter;
+use Laminas\InputFilter\ConfigProvider as InputFilterConfigProvider;
 use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\FileInput;
 use Laminas\InputFilter\Input;
 use Laminas\InputFilter\InputFilter;
+use Laminas\InputFilter\InputFilterAwareInterface;
 use Laminas\InputFilter\InputFilterInterface;
+use Laminas\InputFilter\InputFilterPluginManager;
 use Laminas\InputFilter\InputInterface;
+use Laminas\ServiceManager\ServiceManager;
 use Laminas\Stdlib\PriorityList;
+use Laminas\Validator\ConfigProvider as ValidatorConfigProvider;
+use Laminas\Validator\ValidatorChain;
+use Laminas\Validator\ValidatorPluginManager;
 use LaminasTest\Form\TestAsset\Entity\Category;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 use stdClass;
 
+use function array_replace_recursive;
+use function class_exists;
 use function extension_loaded;
+use function interface_exists;
+use function method_exists;
 use function print_r;
 use function spl_object_hash;
 use function uniqid;
@@ -98,7 +118,7 @@ final class FormTest extends TestCase
         $fieldset->add(new Element('bar'));
         $this->form->add($fieldset);
 
-        $inputFilterFactory = new InputFilterFactory();
+        $inputFilterFactory = $this->createInputFilterFactoryInstance();
         $inputFilter        = $inputFilterFactory->createInputFilter([
             'foo'    => [
                 'name'       => 'foo',
@@ -117,6 +137,7 @@ final class FormTest extends TestCase
                 ],
             ],
             'bar'    => [
+                'name'        => 'bar',
                 'allow_empty' => true,
                 'filters'     => [
                     [
@@ -149,6 +170,7 @@ final class FormTest extends TestCase
                     ],
                 ],
                 'bar'  => [
+                    'name'        => 'bar',
                     'allow_empty' => true,
                     'filters'     => [
                         [
@@ -174,7 +196,7 @@ final class FormTest extends TestCase
 
     public function testCanComposeAnInputFilter(): void
     {
-        $filter = new InputFilter();
+        $filter = $this->createInputFilterInstance();
         $this->form->setInputFilter($filter);
         self::assertSame($filter, $this->form->getInputFilter());
     }
@@ -219,6 +241,8 @@ final class FormTest extends TestCase
 
     public function testHasValidatedFlag(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         if (! extension_loaded('intl')) {
             // Required by \Laminas\I18n\Validator\IsFloat
             $this->markTestSkipped('ext/intl not enabled');
@@ -284,6 +308,8 @@ final class FormTest extends TestCase
 
     public function testSpecifyingValidationGroupForNestedFieldsetsForcesPartialValidation(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         if (! extension_loaded('intl')) {
             // Required by \Laminas\I18n\Validator\IsFloat
             $this->markTestSkipped('ext/intl not enabled');
@@ -712,8 +738,10 @@ final class FormTest extends TestCase
 
     public function testSetsInputFilterToFilterFromBoundModelIfModelImplementsInputLocatorAware(): void
     {
+        $this->skipIfInputFilterAwareInterfaceMissing();
+
         $model = new TestAsset\ValidatingModel();
-        $model->setInputFilter(new InputFilter());
+        $model->setInputFilter($this->createInputFilterInstance());
         $this->populateForm();
         $this->form->bind($model);
         self::assertSame($model->getInputFilter(), $this->form->getInputFilter());
@@ -972,8 +1000,10 @@ final class FormTest extends TestCase
 
     public function testWillUseInputSpecificationFromElementInInputFilterIfNoMatchingInputFound(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         $element = new TestAsset\ElementWithFilter('foo');
-        $filter  = new InputFilter();
+        $filter  = $this->createInputFilterInstance();
         $this->form->setInputFilter($filter);
         $this->form->add($element);
 
@@ -991,8 +1021,10 @@ final class FormTest extends TestCase
 
     public function testWillUseInputFilterSpecificationFromFieldsetInInputFilterIfNoMatchingInputFilterFound(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         $fieldset = new TestAsset\FieldsetWithInputFilter('set');
-        $filter   = new InputFilter();
+        $filter   = $this->createInputFilterInstance();
         $this->form->setInputFilter($filter);
         $this->form->add($fieldset);
 
@@ -1008,10 +1040,12 @@ final class FormTest extends TestCase
 
     public function testWillPopulateSubInputFilterFromInputSpecificationsOnFieldsetElements(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         $element        = new TestAsset\ElementWithFilter('foo');
         $fieldset       = new Fieldset('set');
-        $filter         = new InputFilter();
-        $fieldsetFilter = new InputFilter();
+        $filter         = $this->createInputFilterInstance();
+        $fieldsetFilter = $this->createInputFilterInstance();
         $fieldset->add($element);
         $filter->add($fieldsetFilter, 'set');
         $this->form->setInputFilter($filter);
@@ -1038,8 +1072,8 @@ final class FormTest extends TestCase
     public function testWillUseFormInputFilterOverrideOverInputSpecificationFromElement(): void
     {
         $element       = new TestAsset\ElementWithFilter('foo');
-        $filter        = new InputFilter();
-        $filterFactory = new InputFilterFactory();
+        $filter        = $this->createInputFilterInstance();
+        $filterFactory = $this->createInputFilterFactoryInstance();
         $filter        = $filterFactory->createInputFilter([
             'foo' => [
                 'name'     => 'foo',
@@ -1066,8 +1100,8 @@ final class FormTest extends TestCase
     {
         $element        = new TestAsset\ElementWithFilter('foo');
         $fieldset       = new Fieldset('set');
-        $filter         = new InputFilter();
-        $fieldsetFilter = new InputFilter();
+        $filter         = $this->createInputFilterInstance();
+        $fieldsetFilter = $this->createInputFilterInstance();
         $fieldset->add($element);
         $filter->add($fieldsetFilter, 'set');
         $this->form->setInputFilter($filter);
@@ -1082,8 +1116,10 @@ final class FormTest extends TestCase
 
     public function testCallingPrepareEnsuresInputFilterRetrievesDefaults(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         $element = new TestAsset\ElementWithFilter('foo');
-        $filter  = new InputFilter();
+        $filter  = $this->createInputFilterInstance();
         $this->form->setInputFilter($filter);
         $this->form->add($element);
         $this->form->prepare();
@@ -1183,6 +1219,8 @@ final class FormTest extends TestCase
 
     public function testCanCorrectlyExtractDataFromOneToManyRelationship(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         if (! extension_loaded('intl')) {
             // Required by \Laminas\I18n\Validator\IsFloat
             $this->markTestSkipped('ext/intl not enabled');
@@ -1200,6 +1238,8 @@ final class FormTest extends TestCase
 
     public function testCanCorrectlyPopulateDataToOneToManyEntites(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         if (! extension_loaded('intl')) {
             $this->markTestSkipped('The Intl extension is not loaded');
         }
@@ -1426,6 +1466,8 @@ final class FormTest extends TestCase
 
     public function testApplyObjectInputFilterToBaseFieldsetAndApplyValidationGroup(): void
     {
+        $this->skipIfInputFilterAwareInterfaceMissing();
+
         $fieldset = new Fieldset('foobar');
         $fieldset->add(new Element('foo'));
         $fieldset->setUseAsBaseFieldset(true);
@@ -1436,7 +1478,7 @@ final class FormTest extends TestCase
             ],
         ]);
 
-        $inputFilterFactory = new InputFilterFactory();
+        $inputFilterFactory = $this->createInputFilterFactoryInstance();
         $inputFilter        = $inputFilterFactory->createInputFilter([
             'foo' => [
                 'name'     => 'foo',
@@ -1469,11 +1511,11 @@ final class FormTest extends TestCase
         $collection->setTargetElement($collectionFieldset);
         $this->form->add($collection);
 
-        $inputFilterFactory = new InputFilterFactory();
+        $inputFilterFactory = $this->createInputFilterFactoryInstance();
         $inputFilter        = $inputFilterFactory->createInputFilter([
             'items' => [
                 'type'         => CollectionInputFilter::class,
-                'input_filter' => new InputFilter(),
+                'input_filter' => $this->createInputFilterInstance(),
             ],
         ]);
 
@@ -1518,12 +1560,14 @@ final class FormTest extends TestCase
 
     public function testAddNonBaseFieldsetObjectInputFilterToFormInputFilter(): void
     {
+        $this->skipIfInputFilterAwareInterfaceMissing();
+
         $fieldset = new Fieldset('foobar');
         $fieldset->add(new Element('foo'));
         $fieldset->setUseAsBaseFieldset(false);
         $this->form->add($fieldset);
 
-        $inputFilterFactory = new InputFilterFactory();
+        $inputFilterFactory = $this->createInputFilterFactoryInstance();
         $inputFilter        = $inputFilterFactory->createInputFilter([
             'foo' => [
                 'name'     => 'foo',
@@ -1540,6 +1584,8 @@ final class FormTest extends TestCase
 
     public function testExtractDataHydratorStrategy(): void
     {
+        $this->skipIfInputFilterAwareInterfaceMissing();
+
         $this->populateHydratorStrategyForm();
 
         $hydrator = new ObjectPropertyHydrator();
@@ -1688,20 +1734,39 @@ final class FormTest extends TestCase
         ];
 
         $filteredData = [
+            'foo' => ['1', '2'],
+        ];
+
+        $hydratedData = [
             'foo' => [1, 2],
         ];
 
-        $element  = new TestAsset\ElementWithStringToArrayFilter('foo');
-        $hydrator = $this->createMock(ArraySerializableHydrator::class);
-        $hydrator->expects($this->any())->method('hydrate')->with($filteredData, $this->anything());
+        $element   = new TestAsset\ElementWithStringToArrayFilter('foo');
+        $hydrator  = new ArraySerializableHydrator();
+        $object    = new TestAsset\Model();
+        $strategy  = $this->createMock(StrategyInterface::class);
+        $callCount = 0;
+        $strategy
+            ->expects($this->atLeastOnce())
+            ->method('hydrate')
+            ->willReturnCallback(function (array $values) use (&$callCount, $filteredData, $hydratedData) {
+                if ($callCount === 0) {
+                    self::assertSame($filteredData['foo'], $values);
+                }
+
+                $callCount++;
+                return $hydratedData['foo'];
+            });
+        $hydrator->addStrategy('foo', $strategy);
 
         $this->form->add($element);
         $this->form->setHydrator($hydrator);
-        $this->form->setObject(new stdClass());
+        $this->form->setObject($object);
         $this->form->setData($data);
         $this->form->bindValues($data);
 
-        $this->addToAssertionCount(1);
+        $arrayCopy = $object->getArrayCopy();
+        self::assertSame($hydratedData['foo'], $arrayCopy['foo']);
     }
 
     public function testGetValidationGroup(): void
@@ -1718,12 +1783,14 @@ final class FormTest extends TestCase
 
     public function testPreserveEntitiesBoundToCollectionAfterValidation(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         if (! extension_loaded('intl')) {
             // Required by \Laminas\I18n\Validator\IsFloat
             $this->markTestSkipped('ext/intl not enabled');
         }
 
-        $this->form->setInputFilter(new InputFilter());
+        $this->form->setInputFilter($this->createInputFilterInstance());
         $fieldset = new TestAsset\ProductCategoriesFieldset();
         $fieldset->setUseAsBaseFieldset(true);
 
@@ -1824,8 +1891,8 @@ final class FormTest extends TestCase
             ],
         ]);
 
-        $inputFilter = new BaseInputFilter();
-        $factory     = new InputFilterFactory();
+        $inputFilter = $this->createInputFilterInstance();
+        $factory     = $this->createInputFilterFactoryInstance();
         $inputFilter->add($factory->createInput([
             'name'     => 'importance',
             'required' => false,
@@ -1925,6 +1992,19 @@ final class FormTest extends TestCase
     {
         $form = new TestAsset\FileInputFilterProviderForm();
 
+        if (method_exists(InputFilterFactory::class, 'new')) {
+            $inputFilterFactory = $this->createInputFilterFactoryInstance();
+            $formFactory        = new Factory();
+            $formFactory->setInputFilterFactory($inputFilterFactory);
+            $form->setFormFactory($formFactory);
+
+            self::assertSame($formFactory, $form->getFormFactory());
+            self::assertSame($inputFilterFactory, $formFactory->getInputFilterFactory());
+
+            $probeInput = $inputFilterFactory->createInput(['name' => 'probe']);
+            self::assertInstanceOf(Input::class, $probeInput);
+        }
+
         $formInputFilter     = $form->getInputFilter();
         $fieldsetInputFilter = $formInputFilter->get('file_fieldset');
         $fileInput           = $fieldsetInputFilter->get('file_field');
@@ -1937,6 +2017,8 @@ final class FormTest extends TestCase
 
     public function testInputFilterNotAddedTwiceWhenUsingFieldsets(): void
     {
+        $this->skipIfI18nValidatorsMissing();
+
         $form = new Form();
 
         $fieldset = new TestAsset\FieldsetWithInputFilter('fieldset');
@@ -2000,6 +2082,7 @@ final class FormTest extends TestCase
             'input_filter' => [
                 'type'   => InputFilter::class,
                 'name'   => [
+                    'name'       => 'name',
                     'filters'    => [
                         ['name' => 'StringTrim'],
                         ['name' => 'Null'],
@@ -2015,18 +2098,23 @@ final class FormTest extends TestCase
                 ],
                 'groups' => [
                     'type'         => CollectionInputFilter::class,
+                    'name'         => 'groups',
                     'input_filter' => [
                         'type'        => InputFilter::class,
                         'group_class' => [
+                            'name'     => 'group_class',
                             'required' => false,
                         ],
                         'items'       => [
+                            'name'         => 'items',
                             'type'         => CollectionInputFilter::class,
                             'input_filter' => [
                                 'id'   => [
+                                    'name'     => 'id',
                                     'required' => false,
                                 ],
                                 'type' => [
+                                    'name'     => 'type',
                                     'required' => false,
                                 ],
                             ],
@@ -2116,8 +2204,13 @@ final class FormTest extends TestCase
             ],
         ]);
 
-        $inputFilter = new BaseInputFilter();
-        $factory     = new InputFilterFactory();
+        if (method_exists(InputFilterFactory::class, 'new')) {
+            $inputFilter = new BaseInputFilter($this->createInputFilterFactoryInstance());
+        } else {
+            $inputFilter = new BaseInputFilter();
+        }
+
+        $factory = $this->createInputFilterFactoryInstance();
         $inputFilter->add($factory->createInput([
             'name'     => 'importance',
             'required' => false,
@@ -2334,6 +2427,11 @@ final class FormTest extends TestCase
         $inputFilterFactory = $this->form->getFormFactory()->getInputFilterFactory();
         $inputFilter        = $this->form->getInputFilter();
         self::assertInstanceOf(InputFilter::class, $inputFilter);
+
+        if (! method_exists($inputFilter, 'getFactory')) {
+            $this->markTestSkipped('InputFilter::getFactory not available in this dependency matrix');
+        }
+
         self::assertSame($inputFilterFactory, $inputFilter->getFactory());
     }
 
@@ -2342,12 +2440,19 @@ final class FormTest extends TestCase
      */
     public function testGetInputFilterInjectsFormInputFilterFactoryInstanceWhenObjectIsInputFilterAware(): void
     {
+        $this->skipIfInputFilterAwareInterfaceMissing();
+
         $this->form->setBaseFieldset(new Fieldset('some-fieldset'));
         $this->form->setHydrator(new ClassMethodsHydrator());
         $this->form->bind(new TestAsset\Entity\Cat());
         $inputFilterFactory = $this->form->getFormFactory()->getInputFilterFactory();
         $inputFilter        = $this->form->getInputFilter();
         self::assertInstanceOf(InputFilter::class, $inputFilter);
+
+        if (! method_exists($inputFilter, 'getFactory')) {
+            $this->markTestSkipped('InputFilter::getFactory not available in this dependency matrix');
+        }
+
         self::assertSame($inputFilterFactory, $inputFilter->getFactory());
     }
 
@@ -2460,14 +2565,41 @@ final class FormTest extends TestCase
     {
         $inputFilterName    = uniqid('input_filter_');
         $inputFilter        = $this->createMock(InputFilterInterface::class);
-        $inputFilterFactory = new InputFilterFactory();
-        $inputFilterFactory->getInputFilterManager()->setService($inputFilterName, $inputFilter);
+        $inputFilterFactory = $this->createInputFilterFactoryInstance();
 
         $this->form->getFormFactory()->setInputFilterFactory($inputFilterFactory);
 
-        $this->form->setInputFilterByName($inputFilterName);
+        if (method_exists($inputFilterFactory, 'getInputFilterManager')) {
+            $inputFilterFactory->getInputFilterManager()->setService($inputFilterName, $inputFilter);
 
-        self::assertSame($inputFilter, $this->form->getInputFilter());
+            $this->form->setInputFilterByName($inputFilterName);
+
+            self::assertSame($inputFilter, $this->form->getInputFilter());
+            return;
+        }
+
+        $inputFilterName = InputFilter::class;
+
+        $this->form->add([
+            'name' => 'foo',
+            'type' => Element\Text::class,
+        ]);
+
+        $this->form->setInputFilterByName($inputFilterName);
+        $inputFilter = $this->form->getInputFilter();
+
+        self::assertInstanceOf(InputFilterInterface::class, $inputFilter);
+
+        $inputFilter->add([
+            'name'     => 'foo',
+            'required' => true,
+        ]);
+
+        $this->form->setData(['foo' => 'bar']);
+        self::assertTrue($this->form->isValid());
+
+        $this->form->setData([]);
+        self::assertFalse($this->form->isValid());
     }
 
     public function testAttachInputFilterDefaultsAttachesCollectionInputFilterToCustomCollection(): void
@@ -2478,11 +2610,95 @@ final class FormTest extends TestCase
         $collection->method('getTargetElement')->willReturn(new TestAsset\InputFilterProviderFieldset());
         $this->form->add($collection);
 
-        $inputFilter = new InputFilter();
+        $inputFilter = $this->createInputFilterInstance();
         $this->form->attachInputFilterDefaults($inputFilter, $collection);
         $nestedInputFilter = $this->form->getInputFilter()
             ->get('custom_collection_input_filter_provider');
         self::assertInstanceOf(CollectionInputFilter::class, $nestedInputFilter);
         self::assertInstanceOf(Input::class, $nestedInputFilter->getInputFilter()->get('foo'));
+    }
+
+    private function skipIfI18nValidatorsMissing(): void
+    {
+        if (! class_exists(IsFloat::class) || ! class_exists(Alnum::class)) {
+            $this->markTestSkipped('laminas-i18n validators not available in this test matrix');
+        }
+    }
+
+    private function skipIfInputFilterAwareInterfaceMissing(): void
+    {
+        if (! interface_exists(InputFilterAwareInterface::class)) {
+            $this->markTestSkipped(
+                'Laminas\\InputFilter\\InputFilterAwareInterface is not available in this test matrix'
+            );
+        }
+    }
+
+    private function createInputFilterFactoryInstance(): InputFilterFactory
+    {
+        if (! method_exists(InputFilterFactory::class, 'new')) {
+            return new InputFilterFactory();
+        }
+
+        $container    = new ServiceManager();
+        $dependencies = array_replace_recursive(
+            (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+        );
+        $container->configure($dependencies);
+
+        $inputFactory = static function (
+            ContainerInterface $container,
+            string $requestedName,
+            ?array $options = null
+        ): Input {
+            $options ??= [];
+            $name      = $options['name'] ?? $requestedName;
+
+            return new Input(
+                new FilterChain($container->get(FilterPluginManager::class)),
+                new ValidatorChain($container->get(ValidatorPluginManager::class)),
+                $name,
+                $options
+            );
+        };
+
+        $fileInputFactory = static function (
+            ContainerInterface $container,
+            string $requestedName,
+            ?array $options = null
+        ): FileInput {
+            $options ??= [];
+            $name      = $options['name'] ?? $requestedName;
+
+            return new FileInput(
+                new FilterChain($container->get(FilterPluginManager::class)),
+                new ValidatorChain($container->get(ValidatorPluginManager::class)),
+                $name,
+                $options
+            );
+        };
+
+        $filterPm    = new FilterPluginManager($container);
+        $validatorPm = new ValidatorPluginManager($container);
+        $inputPm     = new InputFilterPluginManager($container, [
+            'factories' => [
+                Input::class                => $inputFactory,
+                FileInput::class            => $fileInputFactory,
+                NormalizedArrayInput::class => NormalizedArrayInputFactory::class,
+            ],
+        ]);
+
+        return new InputFilterFactory($filterPm, $validatorPm, $inputPm);
+    }
+
+    private function createInputFilterInstance(): InputFilter
+    {
+        if (! method_exists(InputFilterFactory::class, 'new')) {
+            return new InputFilter();
+        }
+
+        return new InputFilter($this->createInputFilterFactoryInstance());
     }
 }

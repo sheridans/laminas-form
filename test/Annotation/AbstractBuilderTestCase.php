@@ -6,6 +6,9 @@ namespace LaminasTest\Form\Annotation;
 
 use ArrayObject;
 use Generator;
+use Laminas\Filter\ConfigProvider as FilterConfigProvider;
+use Laminas\Filter\FilterChain;
+use Laminas\Filter\FilterPluginManager;
 use Laminas\Filter\StringTrim;
 use Laminas\Form\Annotation;
 use Laminas\Form\Element;
@@ -15,14 +18,20 @@ use Laminas\Form\FieldsetInterface;
 use Laminas\Form\InputFilterProviderFieldset;
 use Laminas\Hydrator\ClassMethodsHydrator;
 use Laminas\Hydrator\ObjectPropertyHydrator;
+use Laminas\InputFilter\ConfigProvider as InputFilterConfigProvider;
+use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\Input;
 use Laminas\InputFilter\InputFilterInterface;
+use Laminas\InputFilter\InputFilterPluginManager;
 use Laminas\InputFilter\InputInterface;
+use Laminas\ServiceManager\ServiceManager;
 use Laminas\Stdlib\PriorityList;
+use Laminas\Validator\ConfigProvider as ValidatorConfigProvider;
 use Laminas\Validator\EmailAddress;
 use Laminas\Validator\NotEmpty;
 use Laminas\Validator\StringLength;
 use Laminas\Validator\ValidatorChain;
+use Laminas\Validator\ValidatorPluginManager;
 use LaminasTest\Form\ErrorHandler;
 use LaminasTest\Form\TestAsset;
 use LaminasTest\Form\TestAsset\Annotation\Entity;
@@ -35,9 +44,14 @@ use PHPUnit\Framework\Attributes\DoesNotPerformAssertions;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 use Throwable;
 
+use function array_replace_recursive;
+use function array_values;
 use function getenv;
+use function iterator_to_array;
+use function method_exists;
 
 abstract class AbstractBuilderTestCase extends TestCase
 {
@@ -49,6 +63,45 @@ abstract class AbstractBuilderTestCase extends TestCase
     }
 
     abstract protected function createBuilder(): Annotation\AbstractBuilder;
+
+    protected function configureInputFilterInputFactoryForV3(Annotation\AbstractBuilder $builder): void
+    {
+        if (! method_exists(InputFilterFactory::class, 'new')) {
+            return;
+        }
+
+        $container    = new ServiceManager();
+        $dependencies = array_replace_recursive(
+            (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+        );
+        $container->configure($dependencies);
+
+        $inputFilters = $container->get(InputFilterPluginManager::class);
+        $inputFilters->setFactory(
+            InputFilterInput::class,
+            static function (
+                ContainerInterface $container,
+                string $requestedName,
+                ?array $options = null
+            ): InputFilterInput {
+                $options ??= [];
+                $name      = $options['name'] ?? $requestedName;
+
+                return new InputFilterInput(
+                    new FilterChain($container->get(FilterPluginManager::class)),
+                    new ValidatorChain($container->get(ValidatorPluginManager::class)),
+                    $name,
+                    $options
+                );
+            }
+        );
+
+        $formFactory = $builder->getFormFactory();
+        $formFactory->setInputFilterFactory(InputFilterFactory::new($container));
+        $builder->setFormFactory($formFactory);
+    }
 
     public function testCanCreateFormFromStandardEntity(): void
     {
@@ -235,7 +288,9 @@ abstract class AbstractBuilderTestCase extends TestCase
         self::assertCount(2, $usernameValidators);
         self::assertInstanceOf(NotEmpty::class, $usernameValidators[0]['instance']);
         self::assertInstanceOf(StringLength::class, $usernameValidators[1]['instance']);
-        $usernameFilters = $usernameInput->getFilterChain()->getFilters()->toArray();
+        $usernameFilterChain = $usernameInput->getFilterChain();
+        self::assertInstanceOf(FilterChain::class, $usernameFilterChain);
+        $usernameFilters = array_values(iterator_to_array($usernameFilterChain));
         self::assertCount(1, $usernameFilters);
         self::assertInstanceOf(StringTrim::class, $usernameFilters[0]);
 
@@ -246,7 +301,9 @@ abstract class AbstractBuilderTestCase extends TestCase
         self::assertCount(1, $passwordValidators);
         self::assertInstanceOf(EmailAddress::class, $passwordValidators[0]['instance']);
 
-        $passwordFilters = $passwordInput->getFilterChain()->getFilters()->toArray();
+        $passwordFilterChain = $passwordInput->getFilterChain();
+        self::assertInstanceOf(FilterChain::class, $passwordFilterChain);
+        $passwordFilters = array_values(iterator_to_array($passwordFilterChain));
         self::assertCount(1, $passwordFilters);
         self::assertInstanceOf(StringTrim::class, $passwordFilters[0]);
     }

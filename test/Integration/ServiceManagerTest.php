@@ -14,19 +14,21 @@ use Laminas\ServiceManager\ServiceManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
+use function class_exists;
+
 final class ServiceManagerTest extends TestCase
 {
     public function testInitInitializerShouldBeCalledAfterAllOtherInitializers(): void
     {
         // Reproducing the behaviour of a full stack MVC + ModuleManager
-        $serviceManagerConfig = new Config([
+        $serviceManagerConfig = [
             'factories' => [
                 FormElementManager::class => FormElementManagerFactory::class,
             ],
-        ]);
+        ];
 
         $serviceManager = new ServiceManager();
-        $serviceManagerConfig->configureServiceManager($serviceManager);
+        $this->configureContainer($serviceManager, $serviceManagerConfig);
 
         $formElementManager = $serviceManager->get(FormElementManager::class);
         self::assertInstanceOf(FormElementManager::class, $formElementManager);
@@ -41,16 +43,16 @@ final class ServiceManagerTest extends TestCase
             }
         };
 
-        $formElementManagerConfig = new Config([
+        $formElementManagerConfig = [
             'factories'    => [
                 'InitializableElement' => static fn(): Element => $element,
             ],
             'initializers' => [
                 $initializer,
             ],
-        ]);
+        ];
 
-        $formElementManagerConfig->configureServiceManager($formElementManager);
+        $this->configureContainer($formElementManager, $formElementManagerConfig);
 
         self::assertNull($element->getName());
         $formElementManager->get('InitializableElement');
@@ -60,14 +62,14 @@ final class ServiceManagerTest extends TestCase
     public function testInjectFactoryInitializerShouldTriggerBeforeInitInitializer(): void
     {
         // Reproducing the behaviour of a full stack MVC + ModuleManager
-        $serviceManagerConfig = new Config([
+        $serviceManagerConfig = [
             'factories' => [
                 FormElementManager::class => FormElementManagerFactory::class,
             ],
-        ]);
+        ];
 
         $serviceManager = new ServiceManager();
-        $serviceManagerConfig->configureServiceManager($serviceManager);
+        $this->configureContainer($serviceManager, $serviceManagerConfig);
         $formElementManager = $serviceManager->get(FormElementManager::class);
         self::assertInstanceOf(FormElementManager::class, $formElementManager);
 
@@ -87,20 +89,30 @@ final class ServiceManagerTest extends TestCase
             }
         };
 
-        $formElementManagerConfig = new Config([
+        $formElementManagerConfig = [
             'factories'    => [
                 'MyForm' => static fn(): \LaminasTest\Form\Integration\TestAsset\Form => new TestAsset\Form(),
             ],
             'initializers' => [
                 $initializer,
             ],
-        ]);
+        ];
 
-        $formElementManagerConfig->configureServiceManager($formElementManager);
+        $this->configureContainer($formElementManager, $formElementManagerConfig);
 
         $form = $formElementManager->get('MyForm');
         self::assertInstanceOf(TestAsset\Form::class, $form);
         self::assertSame($formElementManager, $form->elementManagerAtInit);
         self::assertTrue($initializer->initialized);
+    }
+
+    private function configureContainer(ServiceManager|FormElementManager $container, array $serviceConfig): void
+    {
+        if (class_exists(Config::class)) {
+            (new Config($serviceConfig))->configureServiceManager($container);
+            return;
+        }
+
+        $container->configure($serviceConfig);
     }
 }

@@ -10,6 +10,11 @@ use Laminas\Validator\Regex;
 use Laminas\Validator\ValidatorInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function method_exists;
+
+use const PHP_VERSION_ID;
 
 final class EmailTest extends TestCase
 {
@@ -59,11 +64,28 @@ final class EmailTest extends TestCase
             self::assertEquals($expectedValidators[$i], $class);
             switch ($class) {
                 case Explode::class:
-                    self::assertInstanceOf(Regex::class, $validator->getValidator());
+                    self::assertInstanceOf(Regex::class, $this->getExplodeValidator($validator));
                     break;
                 default:
                     break;
             }
         }
+    }
+
+    private function getExplodeValidator(Explode $validator): ValidatorInterface
+    {
+        if (method_exists($validator, 'getValidator')) {
+            return $validator->getValidator();
+        }
+
+        $property = new ReflectionProperty($validator, 'validator');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        $innerValidator = $property->getValue($validator);
+        self::assertInstanceOf(ValidatorInterface::class, $innerValidator);
+
+        return $innerValidator;
     }
 }

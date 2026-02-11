@@ -8,6 +8,9 @@ use Laminas\Form\Element\Checkbox as CheckboxElement;
 use Laminas\Validator\InArray;
 use LaminasTest\Form\TestAsset\CustomTraversable;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function method_exists;
 
 final class CheckboxTest extends TestCase
 {
@@ -34,10 +37,15 @@ final class CheckboxTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case InArray::class:
-                    self::assertEquals(
-                        [$element->getCheckedValue(), $element->getUncheckedValue()],
-                        $validator->getHaystack()
-                    );
+                    $expectedHaystack = [$element->getCheckedValue(), $element->getUncheckedValue()];
+                    if (method_exists($validator, 'getHaystack')) {
+                        self::assertEquals($expectedHaystack, $validator->getHaystack());
+                        break;
+                    }
+
+                    $haystackProperty = new ReflectionProperty($validator, 'haystack');
+                    $haystackProperty->setAccessible(true);
+                    self::assertEquals($expectedHaystack, $haystackProperty->getValue($validator));
                     break;
                 default:
                     break;

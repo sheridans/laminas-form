@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace LaminasTest\Form;
 
 use Laminas\Form\Element;
-use Laminas\Form\ElementFactory;
 use Laminas\Form\Exception\DomainException;
 use Laminas\Form\Exception\InvalidElementException;
 use Laminas\Form\Factory;
@@ -23,13 +22,9 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
-use ReflectionProperty;
 use Throwable;
 
-use function array_pop;
-use function array_shift;
 use function assert;
-use function count;
 use function method_exists;
 
 #[Group('Laminas_Form')]
@@ -167,7 +162,10 @@ final class FormElementManagerTest extends TestCase
 
         $manager = new FormElementManager(new ServiceManager(), [
             'initializers' => [
-                static function (ContainerInterface $container, mixed $instance) use (&$factoryInjectedBeforeCustom): void {
+                static function (
+                    ContainerInterface $container,
+                    mixed $instance
+                ) use (&$factoryInjectedBeforeCustom): void {
                     if ($instance instanceof Form) {
                         $factoryInjectedBeforeCustom = $instance->getFormFactory()->getFormElementManager() !== null;
                     }
@@ -194,13 +192,16 @@ final class FormElementManagerTest extends TestCase
                     $customRanBeforeInit = true;
                 },
             ],
-            'factories' => [
+            'factories'    => [
                 'testElement' => static fn(): Element => new Element('testElement'),
             ],
         ]);
 
         $manager->get('testElement');
-        self::assertTrue($customRanBeforeInit, 'Custom initializer should run (between injectFactory and callElementInit)');
+        self::assertTrue(
+            $customRanBeforeInit,
+            'Custom initializer should run (between injectFactory and callElementInit)'
+        );
     }
 
     #[Group('issue-62')]

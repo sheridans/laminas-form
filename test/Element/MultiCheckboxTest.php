@@ -9,12 +9,15 @@ use Laminas\Validator\Explode;
 use Laminas\Validator\InArray;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
-use function count;
+use function is_array;
+use function method_exists;
 use function restore_error_handler;
 use function set_error_handler;
 
 use const E_USER_DEPRECATED;
+use const PHP_VERSION_ID;
 
 final class MultiCheckboxTest extends TestCase
 {
@@ -46,7 +49,7 @@ final class MultiCheckboxTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case Explode::class:
-                    $inArrayValidator = $validator->getValidator();
+                    $inArrayValidator = $this->getExplodeValidator($validator);
                     self::assertInstanceOf(InArray::class, $inArrayValidator);
                     break;
                 default:
@@ -84,7 +87,11 @@ final class MultiCheckboxTest extends TestCase
         self::assertArrayHasKey('validators', $inputSpec);
         $explodeValidator = $inputSpec['validators'][0];
         self::assertInstanceOf(Explode::class, $explodeValidator);
-        self::assertTrue($explodeValidator->isValid($valueTests));
+        $inArrayValidator = $this->getExplodeValidator($explodeValidator);
+
+        foreach ($valueTests as $value) {
+            self::assertTrue($inArrayValidator->isValid($value));
+        }
     }
 
     /**
@@ -94,13 +101,16 @@ final class MultiCheckboxTest extends TestCase
     #[DataProvider('multiCheckboxOptionsDataProvider')]
     public function testInArrayValidatorHaystackIsUpdated(array $valueTests, array $options): void
     {
-        $element          = new MultiCheckboxElement('my-checkbox');
-        $inputSpec        = $element->getInputSpecification();
-        $inArrayValidator = $inputSpec['validators'][0]->getValidator();
-
+        $element = new MultiCheckboxElement('my-checkbox');
+        $element->getInputSpecification();
         $element->setValueOptions($options);
-        $haystack = $inArrayValidator->getHaystack();
-        self::assertCount(count($options), $haystack);
+
+        $updatedSpec      = $element->getInputSpecification();
+        $inArrayValidator = $this->getExplodeValidator($updatedSpec['validators'][0]);
+
+        foreach ($this->getOptionValues($options) as $value) {
+            self::assertTrue($inArrayValidator->isValid($value));
+        }
     }
 
     public function testAttributeType(): void
@@ -209,5 +219,35 @@ final class MultiCheckboxTest extends TestCase
             'b' => 'B',
         ], $element->getValueOptions());
         self::assertTrue($trigger);
+    }
+
+    private function getExplodeValidator(Explode $validator): InArray
+    {
+        if (method_exists($validator, 'getValidator')) {
+            $inner = $validator->getValidator();
+            self::assertInstanceOf(InArray::class, $inner);
+            return $inner;
+        }
+
+        $property = new ReflectionProperty($validator, 'validator');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        $inner = $property->getValue($validator);
+        self::assertInstanceOf(InArray::class, $inner);
+
+        return $inner;
+    }
+
+    /** @return list<string|int> */
+    private function getOptionValues(array $options): array
+    {
+        $values = [];
+        foreach ($options as $key => $option) {
+            $values[] = is_array($option) ? ($option['value'] ?? $key) : $key;
+        }
+
+        return $values;
     }
 }

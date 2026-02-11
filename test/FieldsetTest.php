@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaminasTest\Form;
 
 use ArrayObject;
+use Laminas\Filter\ConfigProvider as FilterConfigProvider;
 use Laminas\Form\Element;
 use Laminas\Form\Exception\InvalidArgumentException;
 use Laminas\Form\Fieldset;
@@ -12,12 +13,21 @@ use Laminas\Form\Form;
 use Laminas\Form\FormElementManager;
 use Laminas\Hydrator;
 use Laminas\Hydrator\HydratorInterface;
+use Laminas\I18n\Validator\Alnum;
+use Laminas\InputFilter\ConfigProvider as InputFilterConfigProvider;
+use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\InputFilter;
 use Laminas\ServiceManager\PluginManagerInterface;
+use Laminas\ServiceManager\ServiceManager;
+use Laminas\Validator\ConfigProvider as ValidatorConfigProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use stdClass;
+
+use function array_replace_recursive;
+use function class_exists;
+use function method_exists;
 
 final class FieldsetTest extends TestCase
 {
@@ -256,13 +266,17 @@ final class FieldsetTest extends TestCase
 
     public function testOnlyElementsWithErrorsInMessages(): void
     {
+        if (! class_exists(Alnum::class)) {
+            self::markTestSkipped('laminas-i18n validators not available in this test matrix');
+        }
+
         $fieldset = new TestAsset\FieldsetWithInputFilter('set');
         $fieldset->add(new Element('foo'));
         $fieldset->add(new Element('bar'));
 
         $form = new Form();
         $form->add($fieldset);
-        $form->setInputFilter(new InputFilter());
+        $form->setInputFilter($this->createCompatibleInputFilter());
         $form->setData([]);
         $form->isValid();
 
@@ -406,7 +420,7 @@ final class FieldsetTest extends TestCase
             'bar' => 'def',
         ]);
 
-        $inputFilter = new InputFilter();
+        $inputFilter = $this->createCompatibleInputFilter();
         $inputFilter->add(['name' => 'foo', 'required' => false]);
         $inputFilter->add(['name' => 'bar', 'required' => false]);
 
@@ -713,5 +727,22 @@ final class FieldsetTest extends TestCase
         self::assertTrue($form->isValid());
         self::assertNull($fieldset->getValue());
         self::assertSame($payload, $form->getData());
+    }
+
+    private function createCompatibleInputFilter(): InputFilter
+    {
+        if (! method_exists(InputFilterFactory::class, 'new')) {
+            return new InputFilter();
+        }
+
+        $container    = new ServiceManager();
+        $dependencies = array_replace_recursive(
+            (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+            (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+        );
+        $container->configure($dependencies);
+
+        return new InputFilter(InputFilterFactory::new($container));
     }
 }
