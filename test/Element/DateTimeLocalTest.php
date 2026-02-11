@@ -13,10 +13,16 @@ use Laminas\Validator\GreaterThan;
 use Laminas\Validator\LessThan;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
+
 final class DateTimeLocalTest extends TestCase
 {
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
+        if (! class_exists(GreaterThan::class) || ! class_exists(LessThan::class)) {
+            self::markTestSkipped('laminas-validator comparison classes are not available in this test matrix');
+        }
+
         $element = new DateTimeLocalElement('foo');
         $element->setAttributes([
             'inclusive' => true,

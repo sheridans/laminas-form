@@ -14,10 +14,14 @@ use Laminas\Validator\Regex;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
+
 final class MonthTest extends TestCase
 {
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new MonthElement('foo');
         $element->setAttributes([
             'inclusive' => true,
@@ -87,5 +91,12 @@ final class MonthTest extends TestCase
         $element = new MonthElement('foo');
         $date    = DateTime::createFromFormat($element->getFormat(), '2023-01');
         self::assertEquals($date->format('d H:i:s'), '01 00:00:00');
+    }
+
+    private function skipIfComparisonValidatorsMissing(): void
+    {
+        if (! class_exists(GreaterThan::class) || ! class_exists(LessThan::class)) {
+            self::markTestSkipped('laminas-validator comparison classes are not available in this test matrix');
+        }
     }
 }

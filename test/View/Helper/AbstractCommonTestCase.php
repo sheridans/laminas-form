@@ -6,12 +6,14 @@ namespace LaminasTest\Form\View\Helper;
 
 use Laminas\Form\ConfigProvider;
 use Laminas\Form\View\Helper\AbstractHelper;
+use Laminas\I18n\View\Helper\AbstractTranslatorHelper;
 use Laminas\View\Helper\Doctype;
 use Laminas\View\Helper\EscapeHtml;
 use Laminas\View\Helper\EscapeHtmlAttr;
 use Laminas\View\Renderer\PhpRenderer;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
 use function extension_loaded;
 
 /**
@@ -21,6 +23,15 @@ abstract class AbstractCommonTestCase extends TestCase
 {
     protected AbstractHelper $helper;
     protected PhpRenderer $renderer;
+
+    public static function setUpBeforeClass(): void
+    {
+        if (! class_exists(AbstractTranslatorHelper::class, false)) {
+            self::markTestSkipped('laminas-i18n view helpers not available in this test matrix');
+        }
+
+        parent::setUpBeforeClass();
+    }
 
     protected function setUp(): void
     {
@@ -37,6 +48,10 @@ abstract class AbstractCommonTestCase extends TestCase
 
     public function testUsesUtf8ByDefault(): void
     {
+        if (! class_exists(AbstractTranslatorHelper::class)) {
+            $this->markTestSkipped('laminas-i18n view helpers not available in this test matrix');
+        }
+
         if (! extension_loaded('intl')) {
             $this->markTestSkipped('ext/intl not enabled');
         }

@@ -9,8 +9,19 @@ use Laminas\Validator\Csrf;
 use LaminasTest\Form\TestAsset\CustomTraversable;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
+
 final class CsrfTest extends TestCase
 {
+    public static function setUpBeforeClass(): void
+    {
+        if (! class_exists(Csrf::class)) {
+            self::markTestSkipped('laminas-validator Csrf is not installed in this test matrix');
+        }
+
+        parent::setUpBeforeClass();
+    }
+
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
         $element = new CsrfElement('foo');

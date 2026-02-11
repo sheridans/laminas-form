@@ -13,10 +13,14 @@ use Laminas\Validator\Regex;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
+
 final class WeekTest extends TestCase
 {
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new WeekElement('foo');
         $element->setAttributes([
             'inclusive' => true,
@@ -78,5 +82,12 @@ final class WeekTest extends TestCase
         self::assertArrayHasKey('validators', $inputSpec);
         $weekValidator = $inputSpec['validators'][0];
         self::assertEquals($expected, $weekValidator->isValid($value));
+    }
+
+    private function skipIfComparisonValidatorsMissing(): void
+    {
+        if (! class_exists(GreaterThan::class) || ! class_exists(LessThan::class)) {
+            self::markTestSkipped('laminas-validator comparison classes are not available in this test matrix');
+        }
     }
 }

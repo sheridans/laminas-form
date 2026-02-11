@@ -16,6 +16,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 use function array_shift;
+use function class_exists;
 
 final class CaptchaTest extends TestCase
 {
@@ -27,6 +28,8 @@ final class CaptchaTest extends TestCase
 
     public function testCaptchaIsMutable(): void
     {
+        $this->skipIfCaptchaMissing();
+
         $element = new CaptchaElement();
 
         // by instance
@@ -58,6 +61,8 @@ final class CaptchaTest extends TestCase
 
     public function testSettingCaptchaSetsCaptchaAttribute(): void
     {
+        $this->skipIfCaptchaMissing();
+
         $element = new CaptchaElement();
         $captcha = new Captcha\Dumb();
         $element->setCaptcha($captcha);
@@ -66,6 +71,8 @@ final class CaptchaTest extends TestCase
 
     public function testCreatingCaptchaElementViaFormFactoryWillCreateCaptcha(): void
     {
+        $this->skipIfCaptchaMissing();
+
         $factory = new Factory();
         $element = $factory->createElement([
             'type'    => CaptchaElement::class,
@@ -83,6 +90,8 @@ final class CaptchaTest extends TestCase
 
     public function testProvidesInputSpecificationThatIncludesCaptchaAsValidator(): void
     {
+        $this->skipIfCaptchaMissing();
+
         $element = new CaptchaElement();
         $captcha = new Captcha\Dumb();
         $element->setCaptcha($captcha);
@@ -97,6 +106,8 @@ final class CaptchaTest extends TestCase
     #[Group('issue-3446')]
     public function testAllowsPassingTraversableOptionsToConstructor(): void
     {
+        $this->skipIfCaptchaMissing();
+
         $options = new TestAsset\IteratorAggregate(new ArrayIterator([
             'captcha' => [
                 'class' => 'dumb',
@@ -105,5 +116,14 @@ final class CaptchaTest extends TestCase
         $element = new CaptchaElement('captcha', $options);
         $captcha = $element->getCaptcha();
         self::assertInstanceOf(Dumb::class, $captcha);
+    }
+
+    private function skipIfCaptchaMissing(): void
+    {
+        if (class_exists(Dumb::class) && class_exists(Captcha\Factory::class)) {
+            return;
+        }
+
+        self::markTestSkipped('laminas-captcha is not installed in this test matrix');
     }
 }

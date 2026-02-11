@@ -11,17 +11,22 @@ use Laminas\Validator\LessThan;
 use Laminas\Validator\Step;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
 use function extension_loaded;
 
 final class RangeTest extends TestCase
 {
-    public function testProvidesInputSpecificationWithDefaultAttributes(): void
+    public static function setUpBeforeClass(): void
     {
-        if (! extension_loaded('intl')) {
-            // Required by \Laminas\I18n\Validator\IsFloat
-            $this->markTestSkipped('ext/intl not enabled');
+        if (! extension_loaded('intl') || ! class_exists(IsFloat::class)) {
+            self::markTestSkipped('laminas-i18n IsFloat validator not available in this test matrix');
         }
 
+        parent::setUpBeforeClass();
+    }
+
+    public function testProvidesInputSpecificationWithDefaultAttributes(): void
+    {
         $element = new RangeElement();
 
         $inputSpec = $element->getInputSpecification();
@@ -57,11 +62,6 @@ final class RangeTest extends TestCase
 
     public function testProvidesInputSpecificationThatIncludesValidator(): void
     {
-        if (! extension_loaded('intl')) {
-            // Required by \Laminas\I18n\Validator\IsFloat
-            $this->markTestSkipped('ext/intl not enabled');
-        }
-
         $element = new RangeElement();
         $element->setAttributes([
             'inclusive' => true,

@@ -9,11 +9,13 @@ use Laminas\Form\Element;
 use Laminas\Form\View\Helper\Factory\FormElementErrorsFactory;
 use Laminas\Form\View\Helper\FormElementErrors;
 use Laminas\I18n\Translator\TranslatorInterface;
+use Laminas\I18n\View\Helper\AbstractTranslatorHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
 use function array_map;
+use function class_exists;
 use function explode;
 use function implode;
 use function sprintf;
@@ -22,6 +24,15 @@ use function ucfirst;
 
 final class FormElementErrorsFactoryTest extends TestCase
 {
+    public static function setUpBeforeClass(): void
+    {
+        if (! class_exists(AbstractTranslatorHelper::class, false)) {
+            self::markTestSkipped('laminas-i18n view helpers not available in this test matrix');
+        }
+
+        parent::setUpBeforeClass();
+    }
+
     public function testFactoryShouldCreateHelperWithoutConfigService(): void
     {
         // Create test double for container

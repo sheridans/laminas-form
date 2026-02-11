@@ -17,6 +17,7 @@ use Laminas\Hydrator\ArraySerializableHydrator;
 use Laminas\Hydrator\ClassMethodsHydrator;
 use Laminas\Hydrator\HydratorInterface;
 use Laminas\Hydrator\ObjectPropertyHydrator;
+use Laminas\I18n\Validator\IsFloat;
 use Laminas\InputFilter\ArrayInput;
 use LaminasTest\Form\TestAsset\AddressFieldset;
 use LaminasTest\Form\TestAsset\ArrayModel;
@@ -37,6 +38,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use stdClass;
 
+use function class_exists;
 use function count;
 use function extension_loaded;
 use function iterator_count;
@@ -440,10 +442,7 @@ final class CollectionTest extends TestCase
 
     public function testDoesNotCreateNewObjects(): void
     {
-        if (! extension_loaded('intl')) {
-            // Required by \Laminas\I18n\Validator\IsFloat
-            $this->markTestSkipped('ext/intl not enabled');
-        }
+        $this->skipIfIntlFloatValidatorMissing();
 
         $form = new Form();
         $form->setHydrator(new ClassMethodsHydrator());
@@ -481,10 +480,7 @@ final class CollectionTest extends TestCase
 
     public function testCreatesNewObjectsIfSpecified(): void
     {
-        if (! extension_loaded('intl')) {
-            // Required by \Laminas\I18n\Validator\IsFloat
-            $this->markTestSkipped('ext/intl not enabled');
-        }
+        $this->skipIfIntlFloatValidatorMissing();
 
         $this->productFieldset->setUseAsBaseFieldset(true);
         $categories = $this->productFieldset->get('categories');
@@ -1444,5 +1440,12 @@ final class CollectionTest extends TestCase
 
         self::assertSame($expected, $collection->extract());
         self::assertSame([$obj2, $obj3], $collection->getObject());
+    }
+
+    private function skipIfIntlFloatValidatorMissing(): void
+    {
+        if (! extension_loaded('intl') || ! class_exists(IsFloat::class)) {
+            $this->markTestSkipped('laminas-i18n IsFloat validator not available in this test matrix');
+        }
     }
 }

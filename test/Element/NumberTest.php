@@ -10,6 +10,12 @@ use Laminas\Validator\LessThan;
 use Laminas\Validator\Regex;
 use Laminas\Validator\Step;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+
+use function class_exists;
+use function method_exists;
+
+use const PHP_VERSION_ID;
 
 final class NumberTest extends TestCase
 {
@@ -30,7 +36,7 @@ final class NumberTest extends TestCase
             self::assertContains($class, $expectedClasses, $class);
             switch ($class) {
                 case Step::class:
-                    self::assertEquals(1, $validator->getStep());
+                    self::assertEquals(1.0, $this->getStepValidatorStep($validator));
                     break;
                 default:
                     break;
@@ -40,6 +46,8 @@ final class NumberTest extends TestCase
 
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new NumberElement();
         $element->setAttributes([
             'inclusive' => true,
@@ -71,7 +79,7 @@ final class NumberTest extends TestCase
                     self::assertEquals(10, $validator->getMax());
                     break;
                 case Step::class:
-                    self::assertEquals(1, $validator->getStep());
+                    self::assertEquals(1.0, $this->getStepValidatorStep($validator));
                     break;
                 default:
                     break;
@@ -81,6 +89,8 @@ final class NumberTest extends TestCase
 
     public function testFalseInclusiveValidatorBasedOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new NumberElement();
         $element->setAttributes([
             'inclusive' => false,
@@ -98,6 +108,8 @@ final class NumberTest extends TestCase
 
     public function testDefaultInclusiveTrueatValidatorWhenInclusiveIsNotSetOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new NumberElement();
         $element->setAttributes([
             'min' => 5,
@@ -125,6 +137,27 @@ final class NumberTest extends TestCase
                 self::assertTrue($validator->isValid('-1000.01'));
                 break;
             }
+        }
+    }
+
+    private function getStepValidatorStep(Step $validator): float
+    {
+        if (method_exists($validator, 'getStep')) {
+            return (float) $validator->getStep();
+        }
+
+        $property = new ReflectionProperty($validator, 'step');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+
+        return (float) $property->getValue($validator);
+    }
+
+    private function skipIfComparisonValidatorsMissing(): void
+    {
+        if (! class_exists(GreaterThan::class) || ! class_exists(LessThan::class)) {
+            self::markTestSkipped('laminas-validator comparison classes are not available in this test matrix');
         }
     }
 }

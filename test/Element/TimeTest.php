@@ -13,10 +13,14 @@ use Laminas\Validator\GreaterThan;
 use Laminas\Validator\LessThan;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
+
 final class TimeTest extends TestCase
 {
     public function testProvidesInputSpecificationThatIncludesValidatorsBasedOnAttributes(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new TimeElement('foo');
         $element->setAttributes([
             'inclusive' => true,
@@ -62,6 +66,8 @@ final class TimeTest extends TestCase
 
     public function testFailsWithInvalidMinSpecification(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new TimeElement('foo');
         $element->setAttributes([
             'inclusive' => true,
@@ -75,6 +81,8 @@ final class TimeTest extends TestCase
 
     public function testFailsWithInvalidMaxSpecification(): void
     {
+        $this->skipIfComparisonValidatorsMissing();
+
         $element = new TimeElement('foo');
         $element->setAttributes([
             'inclusive' => true,
@@ -83,5 +91,12 @@ final class TimeTest extends TestCase
         ]);
         $this->expectException(InvalidArgumentException::class);
         $element->getInputSpecification();
+    }
+
+    private function skipIfComparisonValidatorsMissing(): void
+    {
+        if (! class_exists(GreaterThan::class) || ! class_exists(LessThan::class)) {
+            self::markTestSkipped('laminas-validator comparison classes are not available in this test matrix');
+        }
     }
 }

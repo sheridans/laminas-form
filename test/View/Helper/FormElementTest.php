@@ -8,6 +8,7 @@ use Laminas\Captcha;
 use Laminas\Form\ConfigProvider;
 use Laminas\Form\Element;
 use Laminas\Form\View\Helper\FormElement as FormElementHelper;
+use Laminas\I18n\View\Helper\AbstractTranslatorHelper;
 use Laminas\Validator\Csrf;
 use Laminas\View\Helper\Doctype;
 use Laminas\View\Renderer\PhpRenderer;
@@ -16,10 +17,20 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
+use function class_exists;
 use function substr_count;
 
 final class FormElementTest extends TestCase
 {
+    public static function setUpBeforeClass(): void
+    {
+        if (! class_exists(AbstractTranslatorHelper::class, false)) {
+            self::markTestSkipped('laminas-i18n view helpers not available in this test matrix');
+        }
+
+        parent::setUpBeforeClass();
+    }
+
     /** @var FormElementHelper */
     public $helper;
 
