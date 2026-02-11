@@ -6,6 +6,8 @@ namespace Laminas\Form\Element;
 
 use Laminas\Form\Element;
 use Laminas\Form\Exception\InvalidArgumentException;
+use Laminas\Form\InputFilter\NormalizedArrayInput;
+use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\InputProviderInterface;
 use Laminas\Validator\Explode as ExplodeValidator;
 use Laminas\Validator\InArray as InArrayValidator;
@@ -13,8 +15,10 @@ use Laminas\Validator\ValidatorInterface;
 use Stringable;
 
 use function array_key_exists;
+use function assert;
 use function is_array;
 use function is_iterable;
+use function method_exists;
 use function trigger_error;
 
 use const E_USER_DEPRECATED;
@@ -71,6 +75,16 @@ class Select extends Element implements InputProviderInterface
         return $this->valueOptions;
     }
 
+    /** @inheritDoc */
+    public function setValue(mixed $value)
+    {
+        if ($this->isMultiple() && method_exists(InputFilterFactory::class, 'new')) {
+            $value = $this->normalizeMultipleValue($value);
+        }
+
+        return parent::setValue($value);
+    }
+
     /**
      * @param ValueOptions $options
      * @return $this
@@ -79,20 +93,38 @@ class Select extends Element implements InputProviderInterface
     {
         $this->valueOptions = $options;
 
-        // Update InArrayValidator validator haystack
-        if (null !== $this->validator) {
-            if ($this->validator instanceof InArrayValidator) {
-                $validator = $this->validator;
+        if ($this->validator instanceof InArrayValidator) {
+            if (method_exists($this->validator, 'setHaystack')) {
+                $this->validator->setHaystack($this->getValueOptionsValues());
+            } else {
+                $this->validator = new InArrayValidator([
+                    'haystack' => $this->getValueOptionsValues(),
+                    'strict'   => false,
+                ]);
             }
-            if (
-                $this->validator instanceof ExplodeValidator
-                && $this->validator->getValidator() instanceof InArrayValidator
-            ) {
+        } elseif ($this->validator instanceof ExplodeValidator) {
+            $haystack = $this->getValueOptionsValues();
+
+            if (method_exists($this->validator, 'getValidator')) {
                 $validator = $this->validator->getValidator();
+                assert($validator instanceof InArrayValidator);
+                if (method_exists($validator, 'setHaystack')) {
+                    $validator->setHaystack($haystack);
+                    return $this;
+                }
             }
-            if (! empty($validator)) {
-                $validator->setHaystack($this->getValueOptionsValues());
-            }
+
+            $delimiter = method_exists($this->validator, 'getValueDelimiter')
+                ? $this->validator->getValueDelimiter()
+                : null;
+
+            $this->validator = new ExplodeValidator([
+                'validator'      => new InArrayValidator([
+                    'haystack' => $haystack,
+                    'strict'   => false,
+                ]),
+                'valueDelimiter' => $delimiter,
+            ]);
         }
 
         return $this;
@@ -220,6 +252,11 @@ class Select extends Element implements InputProviderInterface
             ]);
 
             if ($this->isMultiple()) {
+                if (method_exists(InputFilterFactory::class, 'new')) {
+                    $this->validator = $validator;
+                    return $this->validator;
+                }
+
                 $validator = new ExplodeValidator([
                     'validator'      => $validator,
                     'valueDelimiter' => null, // skip explode if only one value
@@ -285,22 +322,39 @@ class Select extends Element implements InputProviderInterface
             $spec['name'] = $name;
         }
 
+        if ($this->isMultiple() && method_exists(InputFilterFactory::class, 'new')) {
+            $spec['type'] = NormalizedArrayInput::class;
+            if ($this->useHiddenElement()) {
+                $spec['options']['unselected_value'] = $this->getUnselectedValue();
+            }
+            $spec['filters'][] = [
+                'name'    => 'Callback',
+                'options' => [
+                    'callback' => static function ($value) {
+                        if ($value === null || $value === '' || $value === []) {
+                            return [];
+                        }
+
+                        return is_array($value) ? $value : [$value];
+                    },
+                ],
+            ];
+        }
+
         if ($this->useHiddenElement() && $this->isMultiple()) {
             $unselectedValue = $this->getUnselectedValue();
 
             $spec['allow_empty']       = true;
             $spec['continue_if_empty'] = true;
-            $spec['filters']           = [
-                [
-                    'name'    => 'Callback',
-                    'options' => [
-                        'callback' => static function ($value) use ($unselectedValue) {
-                            if ($value === $unselectedValue) {
-                                $value = [];
-                            }
-                            return $value;
-                        },
-                    ],
+            $spec['filters'][]         = [
+                'name'    => 'Callback',
+                'options' => [
+                    'callback' => static function ($value) use ($unselectedValue) {
+                        if ($value === $unselectedValue) {
+                            return [];
+                        }
+                        return $value;
+                    },
                 ],
             ];
         }
@@ -351,5 +405,21 @@ class Select extends Element implements InputProviderInterface
     {
         return isset($this->attributes['multiple'])
             && ($this->attributes['multiple'] === true || $this->attributes['multiple'] === 'multiple');
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private function normalizeMultipleValue(mixed $value): array
+    {
+        if ($value === null || $value === '' || $value === []) {
+            return [];
+        }
+
+        if (! is_array($value)) {
+            return [$value];
+        }
+
+        return $value;
     }
 }

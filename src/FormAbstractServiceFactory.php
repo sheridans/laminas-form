@@ -14,6 +14,7 @@ use Psr\Container\ContainerInterface;
 
 use function is_array;
 use function is_string;
+use function method_exists;
 
 final class FormAbstractServiceFactory implements AbstractFactoryInterface
 {
@@ -141,14 +142,16 @@ final class FormAbstractServiceFactory implements AbstractFactoryInterface
 
         $inputFilterFactory = $formFactory->getInputFilterFactory();
 
-        $filterChain = $inputFilterFactory->getDefaultFilterChain();
-        $filterChain->setPluginManager(
-            $container->get(FilterPluginManager::class)
-        );
+        if (method_exists($inputFilterFactory, 'getDefaultFilterChain')) {
+            $filterChain = $inputFilterFactory->getDefaultFilterChain();
+            $filterChain->setPluginManager(
+                $container->get(FilterPluginManager::class)
+            );
 
-        $validatorChain = $inputFilterFactory->getDefaultValidatorChain();
-        $validatorChain->setPluginManager(
-            $container->get(ValidatorPluginManager::class)
-        );
+            $validatorChain = $inputFilterFactory->getDefaultValidatorChain();
+            $validatorChain->setPluginManager(
+                $container->get(ValidatorPluginManager::class)
+            );
+        }
     }
 }

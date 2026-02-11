@@ -5,13 +5,26 @@ declare(strict_types=1);
 namespace Laminas\Form;
 
 use ArrayAccess;
+use Laminas\Filter\ConfigProvider as FilterConfigProvider;
+use Laminas\Filter\FilterChain;
+use Laminas\Filter\FilterPluginManager;
+use Laminas\Form\InputFilter\Factory\NormalizedArrayInputFactory;
+use Laminas\Form\InputFilter\NormalizedArrayInput;
 use Laminas\Hydrator;
+use Laminas\InputFilter\ConfigProvider as InputFilterConfigProvider;
 use Laminas\InputFilter\Factory as InputFilterFactory;
+use Laminas\InputFilter\Input;
 use Laminas\InputFilter\InputFilterInterface;
+use Laminas\InputFilter\InputFilterPluginManager;
 use Laminas\ServiceManager\ServiceManager;
 use Laminas\Stdlib\ArrayUtils;
+use Laminas\Validator\ConfigProvider as ValidatorConfigProvider;
+use Laminas\Validator\ValidatorChain;
+use Laminas\Validator\ValidatorPluginManager;
+use Psr\Container\ContainerInterface;
 use Traversable;
 
+use function array_replace_recursive;
 use function assert;
 use function class_exists;
 use function get_debug_type;
@@ -62,8 +75,54 @@ class Factory
     public function getInputFilterFactory(): InputFilterFactory
     {
         if (null === $this->inputFilterFactory) {
+            $inputFactory = static function (
+                ContainerInterface $container,
+                string $requestedName,
+                ?array $options = null
+            ): Input {
+                $options ??= [];
+                $name      = $options['name'] ?? $requestedName;
+
+                return new Input(
+                    new FilterChain($container->get(FilterPluginManager::class)),
+                    new ValidatorChain($container->get(ValidatorPluginManager::class)),
+                    $name,
+                    $options
+                );
+            };
+
             if (method_exists(InputFilterFactory::class, 'new')) {
-                $this->setInputFilterFactory(InputFilterFactory::new());
+                $container = new ServiceManager();
+
+                $dependencies = array_replace_recursive(
+                    (new FilterConfigProvider())->__invoke()['dependencies'] ?? [],
+                    (new ValidatorConfigProvider())->__invoke()['dependencies'] ?? [],
+                    (new InputFilterConfigProvider())->__invoke()['dependencies'] ?? [],
+                    [
+                        'factories' => [
+                            Input::class                => $inputFactory,
+                            NormalizedArrayInput::class => NormalizedArrayInputFactory::class,
+                        ],
+                    ],
+                );
+
+                $container->configure($dependencies);
+
+                $inputFilters = $container->get(InputFilterPluginManager::class);
+                $inputFilters->setFactory(Input::class, $inputFactory);
+                $inputFilters->setFactory(
+                    NormalizedArrayInput::class,
+                    NormalizedArrayInputFactory::class,
+                );
+
+                if ($container instanceof ServiceManager) {
+                    $allowOverride = $container->getAllowOverride();
+                    $container->setAllowOverride(true);
+                    $container->setService(InputFilterPluginManager::class, $inputFilters);
+                    $container->setAllowOverride($allowOverride);
+                }
+
+                $this->setInputFilterFactory(InputFilterFactory::new($container));
             } else {
                 $this->setInputFilterFactory(new InputFilterFactory());
             }
@@ -493,7 +552,12 @@ class Factory
                     $spec
                 ));
             }
-            $filter = new $spec();
+            if (method_exists(InputFilterFactory::class, 'new')) {
+                // v3: BaseInputFilter constructor requires a Factory instance
+                $filter = new $spec($this->getInputFilterFactory());
+            } else {
+                $filter = new $spec();
+            }
             if (! $filter instanceof InputFilterInterface) {
                 throw new Exception\DomainException(sprintf(
                     '%s expects a valid implementation of Laminas\InputFilter\InputFilterInterface; received "%s"',
@@ -503,6 +567,15 @@ class Factory
             }
             $form->setInputFilter($filter);
             return;
+        }
+
+        if (is_array($spec)) {
+            foreach ($spec as $name => &$inputSpecification) {
+                if (is_array($inputSpecification) && ! isset($inputSpecification['name']) && is_string($name)) {
+                    $inputSpecification['name'] = $name;
+                }
+            }
+            unset($inputSpecification);
         }
 
         $factory = $this->getInputFilterFactory();

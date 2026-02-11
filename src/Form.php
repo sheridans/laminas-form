@@ -7,6 +7,7 @@ namespace Laminas\Form;
 use Laminas\Form\Element\CollectionInterface;
 use Laminas\Hydrator\HydratorInterface;
 use Laminas\InputFilter\CollectionInputFilter;
+use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\InputFilter;
 use Laminas\InputFilter\InputFilterAwareInterface;
 use Laminas\InputFilter\InputFilterInterface;
@@ -21,8 +22,11 @@ use function array_keys;
 use function assert;
 use function in_array;
 use function is_array;
+use function is_int;
 use function is_object;
+use function is_string;
 use function iterator_to_array;
+use function method_exists;
 use function sprintf;
 
 /**
@@ -612,8 +616,14 @@ class Form extends Fieldset implements FormInterface
             } else {
                 $name = (string) $this->baseFieldset->getName();
                 if (! $this->filter instanceof InputFilterInterface || ! $this->filter->has($name)) {
-                    $filter = new InputFilter();
-                    $filter->setFactory($this->getFormFactory()->getInputFilterFactory());
+                    if (method_exists(InputFilterFactory::class, 'new')) {
+                        $filter = new InputFilter($this->getFormFactory()->getInputFilterFactory());
+                    } else {
+                        $filter = new InputFilter();
+                    }
+                    if (method_exists($filter, 'setFactory')) {
+                        $filter->setFactory($this->getFormFactory()->getInputFilterFactory());
+                    }
                     $filter->add($this->object->getInputFilter(), $name);
                     $this->filter = $filter;
                 }
@@ -621,8 +631,14 @@ class Form extends Fieldset implements FormInterface
         }
 
         if (! isset($this->filter)) {
-            $this->filter = new InputFilter();
-            $this->filter->setFactory($this->getFormFactory()->getInputFilterFactory());
+            if (method_exists(InputFilterFactory::class, 'new')) {
+                $this->filter = new InputFilter($this->getFormFactory()->getInputFilterFactory());
+            } else {
+                $this->filter = new InputFilter();
+            }
+            if (method_exists($this->filter, 'setFactory')) {
+                $this->filter->setFactory($this->getFormFactory()->getInputFilterFactory());
+            }
         }
 
         if (
@@ -715,7 +731,10 @@ class Form extends Fieldset implements FormInterface
                     $input = $inputFactory->createInput($spec);
                 } else {
                     // Create an input based on the specification returned from the element
-                    $spec  = $element->getInputSpecification();
+                    $spec = $element->getInputSpecification();
+                    if (is_array($spec) && ! isset($spec['name'])) {
+                        $spec['name'] = $name;
+                    }
                     $input = $inputFactory->createInput($spec);
 
                     if ($inputFilter->has($name) && $inputFilter instanceof ReplaceableInputInterface) {
@@ -749,6 +768,9 @@ class Form extends Fieldset implements FormInterface
 
             if ($fieldset === $this && $fieldset instanceof InputFilterProviderInterface) {
                 foreach ($fieldset->getInputFilterSpecification() as $name => $spec) {
+                    if (is_array($spec) && ! isset($spec['name'])) {
+                        $spec['name'] = (string) $name;
+                    }
                     $input = $inputFactory->createInput($spec);
                     $inputFilter->add($input, $name);
                 }
@@ -770,9 +792,28 @@ class Form extends Fieldset implements FormInterface
                             && $targetElement instanceof InputFilterProviderInterface
                             && [] !== $targetElement->getInputFilterSpecification()
                         ) {
-                            $collectionContainerFilter = new CollectionInputFilter();
+                            if (method_exists(InputFilterFactory::class, 'new')) {
+                                $collectionContainerFilter = new CollectionInputFilter(
+                                    $this->getFormFactory()->getInputFilterFactory()
+                                );
+                            } else {
+                                $collectionContainerFilter = new CollectionInputFilter();
+                            }
 
-                            $spec   = $targetElement->getInputFilterSpecification();
+                            $spec = $targetElement->getInputFilterSpecification();
+                            if (is_array($spec)) {
+                                foreach ($spec as $childName => &$childSpec) {
+                                    if (
+                                        is_array($childSpec)
+                                        && ! isset($childSpec['name'])
+                                        && (is_string($childName) || is_int($childName))
+                                    ) {
+                                        $childSpec['name'] = (string) $childName;
+                                    }
+                                }
+                                unset($childSpec);
+                            }
+
                             $filter = $inputFactory->createInputFilter($spec);
 
                             $collectionContainerFilter->setInputFilter($filter);
@@ -787,7 +828,12 @@ class Form extends Fieldset implements FormInterface
                             // Add child elements from target element
                             $childFieldset = $targetElement;
                         } else {
-                            $inputFilter->add(new InputFilter(), $name);
+                            if (method_exists(InputFilterFactory::class, 'new')) {
+                                $factory = $this->getFormFactory()->getInputFilterFactory();
+                                $inputFilter->add(new InputFilter($factory), $name);
+                            } else {
+                                $inputFilter->add(new InputFilter(), $name);
+                            }
                         }
                     }
                 }
@@ -811,8 +857,20 @@ class Form extends Fieldset implements FormInterface
             }
 
             // Create an input filter based on the specification returned from the fieldset
-            $spec   = $childFieldset->getInputFilterSpecification();
+            $spec = $childFieldset->getInputFilterSpecification();
+            if (is_array($spec)) {
+                foreach ($spec as $childName => &$childSpec) {
+                    if (is_array($childSpec) && ! isset($childSpec['name']) && is_string($childName)) {
+                        $childSpec['name'] = $childName;
+                    }
+                }
+                unset($childSpec);
+            }
+
             $filter = $inputFactory->createInputFilter($spec);
+            if (method_exists($filter, 'setFactory')) {
+                $filter->setFactory($inputFactory);
+            }
             $inputFilter->add($filter, $name);
 
             // Recursively attach sub filters
@@ -903,10 +961,18 @@ class Form extends Fieldset implements FormInterface
      */
     public function setInputFilterByName(string $inputFilterName): void
     {
-        $inputFilter = $this->getFormFactory()
-            ->getInputFilterFactory()
-            ->getInputFilterManager()
-            ->get($inputFilterName);
+        $inputFilterFactory = $this->getFormFactory()->getInputFilterFactory();
+
+        if (method_exists($inputFilterFactory, 'getInputFilterManager')) {
+            $inputFilter = $inputFilterFactory
+                ->getInputFilterManager()
+                ->get($inputFilterName);
+        } else {
+            $inputFilter = $inputFilterFactory->createInputFilter([
+                'type' => $inputFilterName,
+            ]);
+        }
+
         $this->setInputFilter($inputFilter);
     }
 }

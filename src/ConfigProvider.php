@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Laminas\Form;
 
+use Laminas\Form\InputFilter\Factory\NormalizedArrayInputFactory;
+use Laminas\Form\InputFilter\NormalizedArrayInput;
 use Laminas\Form\View\Helper\Factory\FormElementErrorsFactory;
 use Laminas\ServiceManager\ConfigInterface;
 use Laminas\ServiceManager\Factory\InvokableFactory;
@@ -23,8 +25,9 @@ final class ConfigProvider
     public function __invoke(): array
     {
         return [
-            'dependencies' => $this->getDependencyConfig(),
-            'view_helpers' => $this->getViewHelperConfig(),
+            'dependencies'  => $this->getDependencyConfig(),
+            'view_helpers'  => $this->getViewHelperConfig(),
+            'input_filters' => $this->getInputFilterConfig(),
         ];
     }
 
@@ -308,6 +311,18 @@ final class ConfigProvider
                 View\Helper\FormTime::class                     => InvokableFactory::class,
                 View\Helper\FormUrl::class                      => InvokableFactory::class,
                 View\Helper\FormWeek::class                     => InvokableFactory::class,
+            ],
+        ];
+    }
+
+    /**
+     * Return input filter configuration.
+     */
+    public function getInputFilterConfig(): array
+    {
+        return [
+            'factories' => [
+                NormalizedArrayInput::class => NormalizedArrayInputFactory::class,
             ],
         ];
     }

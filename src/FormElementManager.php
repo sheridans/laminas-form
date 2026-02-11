@@ -7,6 +7,7 @@ namespace Laminas\Form;
 use Laminas\Form\Exception;
 use Laminas\Hydrator\HydratorInterface;
 use Laminas\Hydrator\HydratorPluginManager;
+use Laminas\InputFilter\Factory as InputFilterFactory;
 use Laminas\InputFilter\InputFilterPluginManager;
 use Laminas\ServiceManager\AbstractPluginManager;
 use Laminas\ServiceManager\Exception\InvalidServiceException;
@@ -31,8 +32,6 @@ class FormElementManager extends AbstractPluginManager
 {
     /**
      * Aliases for default set of helpers
-     *
-     * @var array
      */
     protected array $aliases = [
         'button'         => Element\Button::class,
@@ -115,8 +114,6 @@ class FormElementManager extends AbstractPluginManager
 
     /**
      * Factories for default set of helpers
-     *
-     * @var array
      */
     protected array $factories = [
         Element\Button::class         => ElementFactory::class,
@@ -193,8 +190,6 @@ class FormElementManager extends AbstractPluginManager
 
     /**
      * Don't share form elements by default (v3)
-     *
-     * @var bool
      */
     protected bool $sharedByDefault = false;
 
@@ -233,7 +228,11 @@ class FormElementManager extends AbstractPluginManager
         $factory = $instance->getFormFactory();
         $factory->setFormElementManager($this);
 
-        if ($container->has(InputFilterPluginManager::class)) {
+        if (method_exists(InputFilterFactory::class, 'new')) {
+            // v3: create properly-wired InputFilterFactory with the application container
+            $factory->setInputFilterFactory(InputFilterFactory::new($container));
+        } elseif ($container->has(InputFilterPluginManager::class)) {
+            // v2: inject InputFilterPluginManager via setter
             $inputFilters = $container->get(InputFilterPluginManager::class);
             $factory->getInputFilterFactory()->setInputFilterManager($inputFilters);
         }
@@ -258,9 +257,6 @@ class FormElementManager extends AbstractPluginManager
      *
      * - add a factory mapping $invokableClass to ElementFactory::class
      * - alias $name to $invokableClass
-     *
-     * @param string $name
-     * @param null|string $class
      */
     public function setInvokableClass(string $name, ?string $class = null): void
     {
@@ -310,8 +306,8 @@ class FormElementManager extends AbstractPluginManager
     {
         if (! $this->defaultInitializersInjected) {
             $this->defaultInitializersInjected = true;
-            $configInitializers        = $config['initializers'] ?? [];
-            $config['initializers']    = array_merge(
+            $configInitializers                = $config['initializers'] ?? [];
+            $config['initializers']            = array_merge(
                 [[$this, 'injectFactory']],
                 $configInitializers,
                 [[$this, 'callElementInit']],

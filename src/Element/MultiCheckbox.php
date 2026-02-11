@@ -11,6 +11,7 @@ use Laminas\Validator\ValidatorInterface;
 use function assert;
 use function is_array;
 use function is_iterable;
+use function method_exists;
 use function trigger_error;
 
 use const E_USER_DEPRECATED;
@@ -62,9 +63,29 @@ class MultiCheckbox extends Checkbox
 
         // Update Explode validator haystack
         if ($this->validator instanceof ExplodeValidator) {
-            $validator = $this->validator->getValidator();
-            assert($validator instanceof InArrayValidator);
-            $validator->setHaystack($this->getValueOptionsValues());
+            $haystack = $this->getValueOptionsValues();
+
+            if (method_exists($this->validator, 'getValidator')) {
+                $validator = $this->validator->getValidator();
+                assert($validator instanceof InArrayValidator);
+
+                if (method_exists($validator, 'setHaystack')) {
+                    $validator->setHaystack($haystack);
+                    return $this;
+                }
+            }
+
+            $delimiter = method_exists($this->validator, 'getValueDelimiter')
+                ? $this->validator->getValueDelimiter()
+                : null;
+
+            $this->validator = new ExplodeValidator([
+                'validator'      => new InArrayValidator([
+                    'haystack' => $haystack,
+                    'strict'   => false,
+                ]),
+                'valueDelimiter' => $delimiter,
+            ]);
         }
 
         return $this;

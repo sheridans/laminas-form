@@ -10,6 +10,7 @@ use Laminas\ServiceManager\Factory\FactoryInterface;
 use Laminas\ServiceManager\ServiceManager;
 use Psr\Container\ContainerInterface;
 
+use function class_exists;
 use function is_array;
 
 /** @psalm-import-type ServiceManagerConfiguration from ServiceManager */
@@ -49,9 +50,14 @@ final class FormElementManagerFactory implements FactoryInterface
         }
 
         /** @psalm-var ServiceManagerConfiguration $config['form_elements'] */
+        $formElementsConfig = $config['form_elements'];
 
-        // Wire service configuration for forms and elements
-        (new Config($config['form_elements']))->configureServiceManager($pluginManager);
+        if (class_exists(Config::class)) {
+            (new Config($formElementsConfig))->configureServiceManager($pluginManager);
+            return $pluginManager;
+        }
+
+        $pluginManager->configure($formElementsConfig);
 
         return $pluginManager;
     }
