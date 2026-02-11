@@ -20,7 +20,7 @@
         "ext-mbstring": "*",
         "laminas/laminas-escaper": "^2",
         "laminas/laminas-filter": "^2 || ^3",
-        "laminas/laminas-hydrator": "^4.13",
+        "laminas/laminas-hydrator": "^5@dev",
         "laminas/laminas-inputfilter": "^2.32.0 || ^3",
         "laminas/laminas-servicemanager": "^4.4",
         "laminas/laminas-stdlib": "^3.20.0",
